@@ -2,8 +2,10 @@
 
 from typing import Any, Dict, List, Set, Optional 
 
-import datatime
+import datetime
 from collections import namedtuple 
+
+import socket
 
 MessageContext = namedtuple("MessageContext", ['source', 'ts', 'data'])
 
@@ -14,34 +16,54 @@ class Content:
         self.data = data 
 
     def serialize(self) -> bytes:
-        pass 
+        return self.data.encode('utf-8')
 
     @classmethod
     def deserialize(cls, data: bytes) -> "Content":
         # deserialize
-        return cls(data)
+        return cls(str(data))
 
 
 class Connection:
     endpoint: str
-    socket: Dict
+    socket: socket.socket
 
-    def __init__(self, endpoint):
+    def __init__(self, endpoint: str, listen: bool = True):
         self.endpoint = endpoint
-        self.socket = {}
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if listen:
+            self.listen()
+        else:
+            self.connect()
 
     def connect(self):
-        pass 
+        self.socket.connect(self.endpoint.split(":"))
+
+    def listen(self):
+        self.socket.bind(('0.0.0.0', 31337))
+        self.socket.listen(5)
+        
 
     def disconnect(self):
         pass 
 
     def send(self, payload: bytes):
-        self.socket.write(payload)
+        for i in range(0, len(payload), 4096):
+            chunk = payload[i:i+4096]
+            self.socket.sendall(chunk)
 
     def receive(self) -> bytes:
-        message = self.socket.read()
-        return message
+        while True:
+            c, addr = self.socket.accept()
+            #print(f"DEBUG: Got connection from {addr}")
+            while True:
+                # receive data from client
+                received_data = c.recv(4096)
+                if not received_data:
+                    break
+                else:
+                    yield received_data
+            c.close()
 
 
 class Client:
@@ -64,7 +86,7 @@ class Client:
 
     def receive_message(self, message: str) -> str:
         data = self.cxn.read()
-        c = MessageContext(source=self.name, ts=datatime.now(), data=data)
+        c = MessageContext(source=self.name, ts=datetime.now(), data=data)
         message = Content.deserialize(data)
         self.history.append(c)
         return message
