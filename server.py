@@ -2,6 +2,10 @@ import concurrent.futures
 import socket
 import threading
 from time import sleep
+from copy import deepcopy
+
+shared_pals = []
+pals_lock = threading.Lock()
 
 def start_server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -40,29 +44,44 @@ def scan_port(ip, port):
             return False
 
 def discover_pals():
-    subnet = '192.168.1'  # replace with your subnet
+    global shared_pals
+    subnet = '192.168.1'
     port = 31337
-    pals = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=256) as executor:
-        future_to_ip = {executor.submit(scan_port, f'{subnet}.{i}', port): f'{subnet}.{i}' for i in range(1, 255)}
-        for future in concurrent.futures.as_completed(future_to_ip):
-            ip = future_to_ip[future]
-            try:
-                data = future.result()
-                if data:
-                    #print(f'DEBUG: Port {port} open on {ip}')
-                    pals.append(ip)
-            except Exception as exc:
-                print('%r generated an exception: %s' % (ip, exc))
-    return pals
+
+    new_pals = []
+    while True:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=256) as executor:
+            future_to_ip = {executor.submit(scan_port, f'{subnet}.{i}', port): f'{subnet}.{i}' for i in range(1, 255)}
+            for future in concurrent.futures.as_completed(future_to_ip):
+                ip = future_to_ip[future]
+                try:
+                    data = future.result()
+                    if data:
+                        #print(f'DEBUG: Port {port} open on {ip}')
+                        new_pals.append(ip)
+                except Exception as exc:
+                    print('%r generated an exception: %s' % (ip, exc))
+        with pals_lock:
+            #print("DISCOVER: got lock")
+            shared_pals = new_pals
+
+        sleep(3)
 
 if __name__ == "__main__":
-    server_thread = threading.Thread(target=start_server, daemon=True)
-    server_thread.start()
-    pals = discover_pals()
+    listen_thread = threading.Thread(target=start_server, daemon=True)
+    discover_thread = threading.Thread(target=discover_pals, daemon=True)
+    listen_thread.start()
+    discover_thread.start()
+
+    MESSAGE = "hello from DentalPal!"
+
     while True:
-        for p in pals:
-            send_message(p, 31337, "hello from DentalPal!")
+        pals_copy = []
+        with pals_lock:
+            #print("MAIN: got lock")
+            pals_copy = deepcopy(shared_pals)
+        for p in pals_copy:
+            send_message(p, 31337, MESSAGE)
         sleep(2)
 	
 
