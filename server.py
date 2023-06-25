@@ -1,17 +1,51 @@
 import concurrent.futures
 import socket
+import struct
 import threading
 from time import sleep
 from copy import deepcopy
 
-shared_pals = []
+DISCOVER_MESSAGE = "DISCOVER PAL"
+MCAST_GRP = '224.1.1.1'  # Multicast IP
+MCAST_PORT = 5007  # Multicast port
+
+shared_pals = set([])
 pals_lock = threading.Lock()
 
-def start_server():
+def multicast_listener():
+    global shared_pals
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((MCAST_GRP, MCAST_PORT))
+
+    # Ask OS to add the socket to the multicast group
+    group = socket.inet_aton(MCAST_GRP)
+    mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+
+    while True:
+        data, addr = sock.recvfrom(4096)
+        if data.decode() == DISCOVER_MESSAGE:
+            #print(f"DEBUG: found multicaset address {addr} with data {data.decode()}")
+            with pals_lock:
+                shared_pals.add(addr[0])
+
+def multicast_sender():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+
+    while True:
+        message = DISCOVER_MESSAGE.encode()
+        sock.sendto(message, (MCAST_GRP, MCAST_PORT))
+        sleep(3)
+
+def pal_listener():
+    global shared_pals
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('0.0.0.0', 31337))
         s.listen(5)
         while True:
+            buffer = ''
             c, addr = s.accept()
             #print(f"DEBUG: Got connection from {addr}")
             while True:
@@ -19,8 +53,10 @@ def start_server():
                 received_data = c.recv(4096)
                 if not received_data:
                     break
-                print(f"Received from {addr}:", received_data.decode('utf-8'))
-            c.close()
+                else:
+                    buffer += received_data.decode('utf-8')
+            print(f"Received from {addr}:", buffer)
+        c.close()
 
 def send_message(ip, port, message):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -68,10 +104,15 @@ def discover_pals():
         sleep(3)
 
 if __name__ == "__main__":
-    listen_thread = threading.Thread(target=start_server, daemon=True)
-    discover_thread = threading.Thread(target=discover_pals, daemon=True)
+    listen_thread = threading.Thread(target=pal_listener, daemon=True)
+    #discover_thread = threading.Thread(target=discover_pals, daemon=True)
+    multicast_listener_thread = threading.Thread(target=multicast_listener, daemon=True)
+    multicast_sender_thread = threading.Thread(target=multicast_sender, daemon=True)
+
     listen_thread.start()
-    discover_thread.start()
+    #discover_thread.start()
+    multicast_listener_thread.start()
+    multicast_sender_thread.start()
 
     MESSAGE = "hello from DentalPal!"
 
