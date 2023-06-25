@@ -60,14 +60,19 @@ def pal_listener():
 
 def send_message(ip, port, message):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((ip, port))
+        try:
+            s.connect((ip, port))
 
-        message_bytes = message.encode('utf-8')
+            message_bytes = message.encode('utf-8')
 
-        # send the message in chunks of 4096 bytes
-        for i in range(0, len(message_bytes), 4096):
-            chunk = message_bytes[i:i+4096]
-            s.sendall(chunk)
+            # send the message in chunks of 4096 bytes
+            for i in range(0, len(message_bytes), 4096):
+                chunk = message_bytes[i:i+4096]
+                s.sendall(chunk)
+        except ConnectionRefusedError:
+            with pals_lock:
+                shared_pals.discard(ip)
+
 
 def scan_port(ip, port):
     #print(f"trying {ip}:{port}")
