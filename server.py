@@ -119,7 +119,7 @@ if __name__ == "__main__":
     multicast_listener_thread.start()
     multicast_sender_thread.start()
 
-    MESSAGE = "hello from DentalPal!"
+    MESSAGE = "hello from the hater"
 
     while True:
         pals_copy = []
