@@ -6,6 +6,11 @@ import datetime
 from collections import namedtuple 
 
 import socket
+from zeroconf import ServiceBrowser, Zeroconf
+import threading
+import time
+
+from lib import Server, Client
 
 MessageContext = namedtuple("MessageContext", ['source', 'ts', 'data'])
 
@@ -92,21 +97,76 @@ class Client:
         return message
 
 
+class Discover:
+    def __init__(self, name: str):
+        self.name = name
+        self.found_services = {}
+
+    def remove_service(self, zeroconf, type, name):
+        c = self.found_services.pop(name)
+        c.stop()
+        print(f"Service {name} removed")
+
+    def add_service(self, zeroconf, type, name):
+        service = zeroconf.get_service_info(type, name)
+
+        if service.name != self.name:
+            client = Client(socket.inet_ntoa(service.addresses[0]), service.port)
+            print(f"Connecting to {client}")
+            client_thread = threading.Thread(target=client.listen_for_messages, daemon=True)
+            client_thread.start()
+
+        self.found_services[name] = client_thread
+        print(f"{service.name} added")
+
+    def update_service(self, zeroconf, type, name):
+        pass
+
+    def __str__(self):
+        return str(set(self.found_services))
+
 def main():
-    ui = get_ui()
+    hostname = socket.gethostname()
+    chat_server = Server(f"officepal-{hostname}", 5000)
+    listener = Discover()
+    zeroconf = Zeroconf()
+
+    print(f"Registering {chat_server.info.type}...")
+    zeroconf.register_service(chat_server.info)
+
+    def listen():
+        browser = ServiceBrowser(zeroconf, "_officepal._tcp.local.", listener)
+        time.sleep(1)
 
 
-    clients = {'cloud': 'api.0x00.sh:12345'}
-    clients += find_clients()
+    listen_thread = threading.Thread(target=listen)
+    listen_thread.start()
 
-    ui.populate_clients(clients)
+    browser = ServiceBrowser(zeroconf, "_officepal._tcp.local.", listener)
+    time.sleep(1)  # allow some time for services to be discovered
 
-def get_ui():
-    pass
+    client_threads = []
 
-def find_clients(broadcast_domain):
-    # scan network
-    return []
+    for service in listener.found_services:
+        if service.name != chat_server.info.name:
+            chat_client = Client(socket.inet_ntoa(service.addresses[0]), service.port)
+            print(f"Connecting to {chat_client}")
+            client_thread = threading.Thread(target=chat_client.listen_for_messages, daemon=True)
+            client_thread.start()
+            client_threads.append(client_thread)
+
+    try:
+        while True:
+            message = f"Server message at {time.ctime()}"
+            chat_server.publish_message(message)
+            time.sleep(10)
+    except KeyboardInterrupt:
+        print("\nInterrupt received, stopping server...")
+    finally:
+        print("Unregistering service...")
+        zeroconf.unregister_service(chat_server.info)
+        zeroconf.close()
+        print("Service unregistered.")
 
 if __name__ == '__main__':
     main()
