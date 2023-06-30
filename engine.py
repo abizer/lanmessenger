@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import argparse
 from typing import Any, Dict, List, Set, Optional 
+import asyncio
 
 import datetime
 from collections import namedtuple 
@@ -10,163 +12,52 @@ from zeroconf import ServiceBrowser, Zeroconf
 import threading
 import time
 
-from lib import Server, Client
+import zmq 
+import zmq.asyncio
 
-MessageContext = namedtuple("MessageContext", ['source', 'ts', 'data'])
+import concurrent.futures
 
-class Content:
-    data: Any
+import logging 
 
-    def __init__(self, data: Any):
-        self.data = data 
+logger = logging.getLogger(__name__)
 
-    def serialize(self) -> bytes:
-        return self.data.encode('utf-8')
+from lib import ZeroconfManager
 
-    @classmethod
-    def deserialize(cls, data: bytes) -> "Content":
-        # deserialize
-        return cls(str(data))
+async def main(args: argparse.Namespace):
+    manager = ZeroconfManager(args)
 
-
-class Connection:
-    endpoint: str
-    socket: socket.socket
-
-    def __init__(self, endpoint: str, listen: bool = True):
-        self.endpoint = endpoint
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if listen:
-            self.listen()
-        else:
-            self.connect()
-
-    def connect(self):
-        self.socket.connect(self.endpoint.split(":"))
-
-    def listen(self):
-        self.socket.bind(('0.0.0.0', 31337))
-        self.socket.listen(5)
-        
-
-    def disconnect(self):
-        pass 
-
-    def send(self, payload: bytes):
-        for i in range(0, len(payload), 4096):
-            chunk = payload[i:i+4096]
-            self.socket.sendall(chunk)
-
-    def receive(self) -> bytes:
+    async def post_messages(manager, message):
         while True:
-            c, addr = self.socket.accept()
-            #print(f"DEBUG: Got connection from {addr}")
-            while True:
-                # receive data from client
-                received_data = c.recv(4096)
-                if not received_data:
-                    break
-                else:
-                    yield received_data
-            c.close()
-
-
-class Client:
-    name: str
-    cxn: Connection
-    endpoint: str = ""
-    history: List = []
-
-    def __init__(self, name: str, endpoint: str):
-        self.name = name
-        self.cxn = Connection(self.endpoint)
-        self.history = []
-
-    def send_message(self, message: str) -> bool:
-        c = MessageContext(source=self.name, ts=datetime.now(), data=message)
-        self.history.append(c)
-
-        ser = Content(message).serialize()
-        self.cxn.send(ser)
-
-    def receive_message(self, message: str) -> str:
-        data = self.cxn.read()
-        c = MessageContext(source=self.name, ts=datetime.now(), data=data)
-        message = Content.deserialize(data)
-        self.history.append(c)
-        return message
-
-
-class Discover:
-    def __init__(self, name: str):
-        self.name = name
-        self.found_services = {}
-
-    def remove_service(self, zeroconf, type, name):
-        c = self.found_services.pop(name)
-        c.stop()
-        print(f"Service {name} removed")
-
-    def add_service(self, zeroconf, type, name):
-        service = zeroconf.get_service_info(type, name)
-
-        if service.name != self.name:
-            client = Client(socket.inet_ntoa(service.addresses[0]), service.port)
-            print(f"Connecting to {client}")
-            client_thread = threading.Thread(target=client.listen_for_messages, daemon=True)
-            client_thread.start()
-
-        self.found_services[name] = client_thread
-        print(f"{service.name} added")
-
-    def update_service(self, zeroconf, type, name):
-        pass
-
-    def __str__(self):
-        return str(set(self.found_services))
-
-def main():
-    hostname = socket.gethostname()
-    chat_server = Server(f"officepal-{hostname}", 5000)
-    listener = Discover()
-    zeroconf = Zeroconf()
-
-    print(f"Registering {chat_server.info.type}...")
-    zeroconf.register_service(chat_server.info)
-
-    def listen():
-        browser = ServiceBrowser(zeroconf, "_officepal._tcp.local.", listener)
-        time.sleep(1)
-
-
-    listen_thread = threading.Thread(target=listen)
-    listen_thread.start()
-
-    browser = ServiceBrowser(zeroconf, "_officepal._tcp.local.", listener)
-    time.sleep(1)  # allow some time for services to be discovered
-
-    client_threads = []
-
-    for service in listener.found_services:
-        if service.name != chat_server.info.name:
-            chat_client = Client(socket.inet_ntoa(service.addresses[0]), service.port)
-            print(f"Connecting to {chat_client}")
-            client_thread = threading.Thread(target=chat_client.listen_for_messages, daemon=True)
-            client_thread.start()
-            client_threads.append(client_thread)
+            timed_message = f"{time.ctime()}: {message}"
+            await manager.publisher.publish_message(topic="officepal", message=timed_message)
+            await asyncio.sleep(5)
 
     try:
-        while True:
-            message = f"Server message at {time.ctime()}"
-            chat_server.publish_message(message)
-            time.sleep(10)
+        print("Starting server...")
+        runner = asyncio.create_task(manager.run())
+        
+
+        print("Starting publisher...")
+        publisher = asyncio.create_task(post_messages(manager, args.message))
+
+        print("Receiving messages...")
+        async for msg in manager.listener.get_messages():
+            print(msg)
+
     except KeyboardInterrupt:
-        print("\nInterrupt received, stopping server...")
-    finally:
-        print("Unregistering service...")
-        zeroconf.unregister_service(chat_server.info)
-        zeroconf.close()
-        print("Service unregistered.")
+        print("Stopping server...")
+        runner.cancel()
+        publisher.cancel()        
 
 if __name__ == '__main__':
-    main()
+    logging.basicConfig(level=logging.DEBUG)
+    hostname = socket.gethostname()
+    parser = argparse.ArgumentParser(description="officepal lanmessenger")
+
+    parser.add_argument('--name', type=str, default=f"officepal-{hostname}", help="Service name")
+    parser.add_argument('--port', type=int, default=31337, help='Listen port')
+    parser.add_argument('--message', type=str, default="Hello from officepal", help='Publish message')
+
+    args = parser.parse_args()
+
+    asyncio.run(main(args))
