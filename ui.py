@@ -1,6 +1,21 @@
 import dearpygui.dearpygui as dpg
+from enum import Enum
 
-DIMENSIONS = (800, 600)
+class Friend:
+    class Status(Enum):
+        # Sending discovery pings and activity pings within past 15 minutes
+        ONLINE = 1   
+        # Sending discovery pings but no recent activity pings
+        AWAY   = 2 
+        # Not sending discovery pings 
+        OFFLINE = 3
+
+    def __init__(self, username, status=Status.ONLINE):
+        self.username = username
+        self.message_buffer = ""
+        self.status = status
+
+DIMENSIONS = [800, 600]
 
 def resize_callback(sender, data):
     DIMENSIONS[0] = data[0]
@@ -31,11 +46,28 @@ with dpg.window(label="main",
                 no_title_bar=True, 
                 no_resize=True, 
                 no_move=True):
-    long_text = 'Lorem ipsum' * 100  # some long text
-    with dpg.child_window(tag="text_scroll", width=600, height=200):
-        dpg.add_text(default_value="", tag='chatlog', wrap=500)
-    dpg.add_input_text(label="##Input Text", width=600, default_value="", tag="chat_input", on_enter=True, callback=button_callback)
-    dpg.add_button(label="Submit", callback=button_callback)
+
+    with dpg.group(horizontal=True):
+        with dpg.group(horizontal=False):
+            with dpg.child_window(tag="text_scroll", width=600, height=400):
+                padding = 20
+                wrap = dpg.get_item_width("text_scroll") - padding
+                dpg.add_text(default_value="", tag='chatlog', wrap=wrap)
+            dpg.add_input_text(label="##Input Text", width=600, default_value="", tag="chat_input", on_enter=True, callback=button_callback)
+            dpg.add_button(label="Submit", callback=button_callback)
+
+
+        with dpg.child_window(width=DIMENSIONS[0] - dpg.get_item_width("text_scroll")):
+            with dpg.collapsing_header(label="LAN pals", default_open=True):
+                with dpg.group(horizontal=False):
+                    def _single_selection(sender, app_data, user_data):
+                        pals = user_data
+                        for p in pals:
+                            if p != sender:
+                                dpg.set_value(p, False)
+                    pals = [ dpg.add_selectable(label=f"Pal {i}") for i in range(10) ]
+                    for p in pals:
+                        dpg.configure_item(p, callback=_single_selection, user_data=pals)
 
 with dpg.handler_registry():
     dpg.set_viewport_resize_callback(resize_callback)
