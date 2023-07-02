@@ -1,2 +1,4 @@
-zeroconf
+dearpygui
 pyzmq
+zeroconf
+
