@@ -57,10 +57,16 @@ with dpg.handler_registry():
 
 DEFAULT_FONT_INDEX = 4
 MENU_FONT_INDEX    = 2
-fonts = []
+
+fonts = {} 
+MIN_FONT_SIZE = 12
+MAX_FONT_SIZE = 24
+DEFAULT_FONT_SIZE = 16
+MENU_FONT_SIZE = 14 # not configurable
+
 with dpg.font_registry():
-    for i in range(12, 19):
-        fonts.append(dpg.add_font("/System/Library/Fonts/SFNSMono.ttf", i))
+    for i in range(MIN_FONT_SIZE, MAX_FONT_SIZE+1):
+        fonts[i] = dpg.add_font("/System/Library/Fonts/SFNSMono.ttf", i)
 
 with dpg.window(label="main", 
                 tag="main_window", 
@@ -76,20 +82,16 @@ with dpg.window(label="main",
     with dpg.menu_bar():
         with dpg.menu(tag="MainMenu", label="Setting"):
             def _change_font_size(sender, app_data, user_data):
-                font_size = clamp(app_data, 12, 18)
+                font_size = clamp(app_data, MIN_FONT_SIZE, MAX_FONT_SIZE)
                 dpg.configure_item("SettingFontScale", default_value=font_size)
 
-                print("New font size: ", font_size, font_size-12, len(fonts))
-                dpg.bind_font(fonts[4])
-                #dpg.bind_item_font("MainMenu", fonts[MENU_FONT_INDEX])
+                current_font = dpg.get_item_font("main_area")
+                if current_font != fonts[font_size]:
+                    dpg.bind_item_font("main_area", fonts[font_size])
 
-                #dpg.set_global_font_scale(FONT_SCALE)
-                #dpg.bind_item_font("MainMenu", fixed_font)
+            dpg.add_input_int(label="Font Size", tag="SettingFontScale", callback=_change_font_size, default_value=DEFAULT_FONT_SIZE, step=1)
 
-
-            dpg.add_input_int(label="Font Size", tag="SettingFontScale", callback=_change_font_size, default_value=12+DEFAULT_FONT_INDEX, step=1)
-
-    with dpg.group(horizontal=True):
+    with dpg.group(tag="main_area", horizontal=True):
         with dpg.group(tag="chatbox", horizontal=False):
             with dpg.child_window(tag="text_scroll", height=int(DIMENSIONS[1]*0.6)):
                 padding = 20
@@ -113,8 +115,8 @@ with dpg.window(label="main",
                     for p in pals:
                         dpg.configure_item(p, callback=_single_selection, user_data=pals)
 
-dpg.bind_font(fonts[DEFAULT_FONT_INDEX])
-dpg.bind_item_font("MainMenu", fonts[MENU_FONT_INDEX])
+dpg.bind_font(fonts[DEFAULT_FONT_SIZE])
+dpg.bind_item_font("MainMenu", fonts[MENU_FONT_SIZE])
 
 dpg.create_viewport(title='LAN Messenger', width=DIMENSIONS[0], height=DIMENSIONS[1], min_width=800, min_height=600)
 dpg.setup_dearpygui()
