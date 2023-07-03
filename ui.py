@@ -26,6 +26,7 @@ def adjust_layout():
     padding = 20
     new_chatbox_width = DIMENSIONS[0] - pals_window_width - padding
     dpg.configure_item("chatbox", width=new_chatbox_width)
+    dpg.configure_item("text_scroll", height=int(DIMENSIONS[1]*0.6))
     dpg.configure_item("pals_list", width=pals_window_width)
 
 def viewport_changed_callback(sender, data):
@@ -90,7 +91,7 @@ with dpg.window(label="main",
 
     with dpg.group(horizontal=True):
         with dpg.group(tag="chatbox", horizontal=False):
-            with dpg.child_window(tag="text_scroll", height=400):
+            with dpg.child_window(tag="text_scroll", height=int(DIMENSIONS[1]*0.6)):
                 padding = 20
                 wrap = dpg.get_item_width("text_scroll") - padding
                 # this sucks. We should have a horizontal group with a text for
