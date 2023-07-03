@@ -1,5 +1,4 @@
-from functools import partial
-from friend import MOCK_FRIENDS
+from friend import Message, MOCK_FRIENDS
 from util import clamp
 import dearpygui.dearpygui as dpg
 import logging
@@ -89,8 +88,20 @@ class UI:
         self.chat_area = dpg.add_group(parent=self.content_area, width=-200, horizontal=False)
         with dpg.group(parent=self.chat_area, horizontal=False):
             self.scrollable_message_box = dpg.add_child_window(height=-70)
-            dpg.add_input_text(label="##Input Text", default_value="", tag="chat_input", on_enter=True)
-            dpg.add_button(label="Submit")
+            input_box = dpg.add_input_text(label="##Input Text", default_value="", tag="chat_input", on_enter=True)
+            def _on_submit(sender, data):
+                input = dpg.get_value(input_box).strip()
+                if len(input) > 0:
+                    # clear box and refocus
+                    dpg.configure_item(input_box, default_value="")
+                    dpg.focus_item(input_box)
+                
+                if self.active_friend is not None:
+                    MOCK_FRIENDS[self.active_friend].append(Message(input, True))
+                    self.on_selected_friend_changed(self.active_friend, True)
+
+            dpg.configure_item(input_box, callback=_on_submit)
+            dpg.add_button(label="Submit", callback=_on_submit)
         self.goto_most_recent_message()
 
         # Friends list
@@ -150,5 +161,6 @@ class UI:
         dpg.start_dearpygui()
         dpg.destroy_context()
 
-ui = UI()
-ui.run()
+if __name__ == '__main__':
+    ui = UI()
+    ui.run()
