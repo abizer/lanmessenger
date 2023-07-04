@@ -56,15 +56,17 @@ class UI:
         author_them = friend.username + ':'
         assert len(author_them) == len(author_me)
 
-        wrap = dpg.get_item_state(self.chat_area)['rect_size'][0] - len(author_me) - 80
+        # unused for now in favor of the much simpler horizontal scrollbar
+        #wrap = dpg.get_item_state(self.chat_area)['rect_size'][0] - len(author_me) - 80
 
-        for message in MOCK_FRIENDS[friend]:
-            with dpg.group(horizontal=True, parent=self.scrollable_message_box):
-                if message.outgoing:
-                    dpg.add_text(default_value=author_me, color=(53, 116, 176))
-                else:
-                    dpg.add_text(default_value=author_them, color=(227, 79, 68))
-                dpg.add_text(default_value=message.content, wrap=wrap)
+        with dpg.child_window(horizontal_scrollbar=True, parent=self.scrollable_message_box):
+            for message in MOCK_FRIENDS[friend]:
+                with dpg.group(horizontal=True):
+                    if message.outgoing:
+                        dpg.add_text(default_value=author_me, color=(53, 116, 176))
+                    else:
+                        dpg.add_text(default_value=author_them, color=(227, 79, 68))
+                    dpg.add_text(default_value=message.content)
         self.goto_most_recent_message()
 
     # New friend detected in the LAN, existing friend's online status changed
