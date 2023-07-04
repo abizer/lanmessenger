@@ -1,5 +1,3 @@
-from ast import Dict
-from typing import Any
 from friend import Message, MOCK_FRIENDS
 from util import clamp
 import dearpygui.dearpygui as dpg
@@ -13,7 +11,7 @@ class Dimensions:
         self.height = height
 
 class UI:
-    def __init__(self, context: Dict[str, Any]):
+    def __init__(self):
         # Starting dimensions. Subject to change on viewport rearragement
         self.dim = Dimensions(1368, 1000)
 
@@ -25,9 +23,7 @@ class UI:
         self.current_font_size = 18
 
         self.active_friend = None
-
-        # context for accessing the network/pubsub
-        self.context = context
+        
 
     def register_fonts(self):
         DEFAULT_FONT_OSX = "/System/Library/Fonts/SFNSMono.ttf"
