@@ -58,12 +58,14 @@ class ZeroconfManager:
 
     def add_service(self, zeroconf, type, name):
         svc = zeroconf.get_service_info(type, name)
+        address = socket.inet_ntoa(svc.addresses[0])
+        logger.debug(f"{name}, {svc.name}, {address}, {svc.port}")
         if svc.name != f"{self.name}.{ZEROCONF_TYPE}":
             logger.debug(f"Friend found: {svc.name}")
             subscriber = Subscriber(
                 self.zmq, 
                 name=svc.name, 
-                ip=socket.inet_ntoa(svc.addresses[0]), 
+                ip=address, 
                 port=svc.port, 
                 queue=self.subscriber_queue
             )
@@ -72,7 +74,8 @@ class ZeroconfManager:
 
     def remove_service(self, zeroconf, type, name):
         logger.debug(f"Friend lost: {name}")
-        self.friends.pop(name)
+        socket = self.friends.pop(name)
+        socket.close()
 
     def update_service(self, zeroconf, type, name):
         pass
@@ -108,11 +111,17 @@ class Subscriber:
         self.sock.connect(f"tcp://{ip}:{port}")
         self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
 
+        self.read_shutdown = threading.Event()
         self.read_thread = threading.Thread(target=self.get, daemon=True).start()
 
     def get(self):
-        while True:
+        while not self.read_shutdown.is_set():
             self.queue.put((self.name, self.sock.recv_string()))
+
+    def close(self):
+        self.read_shutdown.set()
+        self.sock.close()
+        
 
 def parse_args():
     hostname = socket.gethostname()
