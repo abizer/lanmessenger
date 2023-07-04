@@ -1,7 +1,8 @@
 import argparse
 import asyncio
 import socket
-import threading 
+import threading
+import time 
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
 import zmq
@@ -10,14 +11,12 @@ import logging
 
 import queue
 
-from ui import UI
-
 logger = logging.getLogger(__name__)
 
 ZEROCONF_TYPE = "_officepal._tcp.local."
 
 class ZeroconfManager:
-    def __init__(self, port: int = 31337, name=""):
+    def __init__(self, name: str = "test", port: int = 31337):
         self.hostname = socket.gethostname()
         self.name = name or f'officepal-{self.hostname}'
         self.port = port
@@ -25,6 +24,7 @@ class ZeroconfManager:
         self.zmq = zmq.Context()
 
         self.publish_queue = queue.SimpleQueue()
+        self.subscriber_queue = queue.SimpleQueue()
 
         self.publisher = Publisher(context=self.zmq, port=self.port, queue=self.publish_queue)
         
@@ -52,7 +52,7 @@ class ZeroconfManager:
         svc = zeroconf.get_service_info(type, name)
         if svc.name != f"{self.name}.{ZEROCONF_TYPE}":
             logger.debug(f"Friend found: {svc.name}")
-            subscriber = Subscriber(self.zmq, ip=socket.inet_ntoa(svc.addresses[0]), port=svc.port)
+            subscriber = Subscriber(self.zmq, name=svc.name, ip=socket.inet_ntoa(svc.addresses[0]), port=svc.port, queue=self.subscriber_queue)
             self.friends[svc.name] = subscriber
             
 
@@ -85,19 +85,22 @@ class Publisher:
     
 
 class Subscriber:
-    def __init__(self, context, ip, port):
+    def __init__(self, context, name, ip, port, queue):
         self.context = context 
+        self.name = name
         self.ip = ip
         self.port = port
+        self.queue = queue
 
         self.sock = self.context.socket(zmq.SUB)
         self.sock.connect(f"tcp://{ip}:{port}")
         self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
 
+        self.read_thread = threading.Thread(target=self.get, daemon=True).start()
+
     def get(self):
         while True:
-            msg = self.sock.recv_string()
-            yield msg
+            self.queue.put((self.name, self.sock.recv_string()))
 
 def parse_args():
     hostname = socket.gethostname()
@@ -107,30 +110,22 @@ def parse_args():
     parser.add_argument('--port', type=int, default=31337, help='Listen port')
     parser.add_argument('--message', type=str, default="Hello from officepal", help='Publish message')
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    asyncio.run(main(args))
+def main(args: argparse.Namespace):
+    z = ZeroconfManager(port=args.port, name=args.name)
 
-async def main(args: argparse.Namespace):
-    pubq = queue.SimpleQueue()
-    subq = queue.SimpleQueue()
+    def writer():
+        while True:
+            z.publisher.write(args.message) 
+            time.sleep(2)       
 
-    zmqc = zmq.asyncio.Context()
+    publish_thread = threading.Thread(target=writer, daemon=True).start()
 
-    publisher = Publisher(zmqc, args.port)
+    while True:
+        print(z.subscriber_queue.get())
 
-    run_context = {
-        'pubq': pubq,
-        'subq': subq,
-    }
-
-    ui = UI(run_context)
-    ui.run()
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-
-    #args = parse_args()
-    #asyncio.run(main(args))
-
-
+    main(parse_args())
