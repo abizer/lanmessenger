@@ -36,7 +36,11 @@ class ZeroconfManager:
 
         self.friends = {}
 
-        self.publisher = Publisher(context=self.zmq, port=self.port, queue=self.publish_queue)
+        self.publisher = Publisher(
+            context=self.zmq, 
+            port=self.port, 
+            queue=self.publish_queue
+        )
         self.zc.register_service(self.service_info)
         self.browser = ServiceBrowser(
             self.zc, 
@@ -56,7 +60,13 @@ class ZeroconfManager:
         svc = zeroconf.get_service_info(type, name)
         if svc.name != f"{self.name}.{ZEROCONF_TYPE}":
             logger.debug(f"Friend found: {svc.name}")
-            subscriber = Subscriber(self.zmq, name=svc.name, ip=socket.inet_ntoa(svc.addresses[0]), port=svc.port, queue=self.subscriber_queue)
+            subscriber = Subscriber(
+                self.zmq, 
+                name=svc.name, 
+                ip=socket.inet_ntoa(svc.addresses[0]), 
+                port=svc.port, 
+                queue=self.subscriber_queue
+            )
             self.friends[svc.name] = subscriber
             
 
@@ -85,8 +95,6 @@ class Publisher:
     
     def write(self, message):
         self.queue.put(message)
-
-    
 
 class Subscriber:
     def __init__(self, context, name, ip, port, queue):
@@ -118,19 +126,21 @@ def parse_args():
 
 
 
-def main(args: argparse.Namespace):
-    with closing(ZeroconfManager(port=args.port, name=args.name)) as z:
+def main(name: str, port: int, message: str):
+    with closing(ZeroconfManager(port=port, name=name)) as z:
         def writer():
             while True:
-                z.publisher.write(args.message) 
+                z.publisher.write(message) 
                 time.sleep(2)       
 
         publish_thread = threading.Thread(target=writer, daemon=True).start()
 
         while True:
-            print(z.subscriber_queue.get())
+            user, msg = z.subscriber_queue.get()
+            print(f"{msg} from {user}")
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    main(parse_args())
+    args = parse_args()
+    main(name=args.name, port=args.port, message=args.message)
