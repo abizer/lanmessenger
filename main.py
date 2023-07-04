@@ -8,6 +8,7 @@ from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
 import zmq
 import zmq.asyncio
 import logging
+from contextlib import closing
 
 import queue
 
@@ -35,7 +36,6 @@ class ZeroconfManager:
 
         self.friends = {}
 
-    def __enter__(self):
         self.publisher = Publisher(context=self.zmq, port=self.port, queue=self.publish_queue)
         self.zc.register_service(self.service_info)
         self.browser = ServiceBrowser(
@@ -43,8 +43,9 @@ class ZeroconfManager:
             ZEROCONF_TYPE, 
             listener=self,
         )
+        
 
-    def __exit__(self):
+    def close(self):
         self.zc.unregister_service(self.service_info)
         self.publisher.sock.close()
         for friend in self.friends.values():
@@ -115,8 +116,10 @@ def parse_args():
 
     return parser.parse_args()
 
+
+
 def main(args: argparse.Namespace):
-    with ZeroconfManager(port=args.port, name=args.name) as z:
+    with closing(ZeroconfManager(port=args.port, name=args.name)) as z:
         def writer():
             while True:
                 z.publisher.write(args.message) 
