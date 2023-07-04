@@ -20,7 +20,13 @@ class ZeroconfManager:
     def __init__(self, port: int = 31337, name=""):
         self.hostname = socket.gethostname()
         self.name = name or f'officepal-{self.hostname}'
-        self.zc = Zeroconf() 
+        self.port = port
+        self.zc = Zeroconf()
+        self.zmq = zmq.Context()
+
+        self.publish_queue = queue.SimpleQueue()
+
+        self.publisher = Publisher(context=self.zmq, port=self.port, queue=self.publish_queue)
         
         self.service_info = ServiceInfo(
             ZEROCONF_TYPE,
@@ -40,12 +46,14 @@ class ZeroconfManager:
 
     def __del__(self):
         self.zc.unregister_service(self.service_info)
+        self.zmq.term()
 
     def add_service(self, zeroconf, type, name):
         svc = zeroconf.get_service_info(type, name)
-        if svc.name != self.name:
+        if svc.name != f"{self.name}.{ZEROCONF_TYPE}":
             logger.debug(f"Friend found: {svc.name}")
-            self.friends[svc.name] = f"tcp://{socket.inet_ntoa(svc.addresses[0])}:{svc.port}"
+            subscriber = Subscriber(self.zmq, ip=socket.inet_ntoa(svc.addresses[0]), port=svc.port)
+            self.friends[svc.name] = subscriber
             
 
     def remove_service(self, zeroconf, type, name):
@@ -55,8 +63,6 @@ class ZeroconfManager:
     def update_service(self, zeroconf, type, name):
         pass
         
-            
-
 
 class Publisher:
     def __init__(self, context, port: int, queue: queue.SimpleQueue):
@@ -68,13 +74,13 @@ class Publisher:
 
         self.thread = threading.Thread(target=self.worker, daemon=True).start()
 
-    async def worker(self):
+    def worker(self):
         while True: 
             msg = self.queue.get()
-            await self.sock.send_string(msg)
+            self.sock.send_string(msg)
     
-    async def write(self, message):
-        await self.queue.put
+    def write(self, message):
+        self.queue.put(message)
 
     
 
@@ -88,9 +94,9 @@ class Subscriber:
         self.sock.connect(f"tcp://{ip}:{port}")
         self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
 
-    async def get(self):
+    def get(self):
         while True:
-            msg = await self.sock.recv_string()
+            msg = self.sock.recv_string()
             yield msg
 
 def parse_args():
