@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import socket
 import threading
-import time 
+import time
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
 import zmq
@@ -28,10 +28,10 @@ class Publisher:
         self.thread = threading.Thread(target=self.worker, daemon=True).start()
 
     def worker(self):
-        while not self.shutdown_event.is_set(): 
+        while not self.shutdown_event.is_set():
             msg = self.queue.get()
             self.sock.send_string(msg)
-    
+
     def write(self, message):
         self.queue.put(message)
 
@@ -42,7 +42,7 @@ class Publisher:
 
 class Subscriber:
     def __init__(self, context, name, ip, port, queue):
-        self.context = context 
+        self.context = context
         self.name = name
         self.ip = ip
         self.port = port
@@ -76,7 +76,7 @@ class ZeroconfManager:
 
         self.publish_queue = queue.SimpleQueue()
         self.subscriber_queue = queue.SimpleQueue()
-        
+
         self.service_info = ServiceInfo(
             ZEROCONF_TYPE,
             f"{self.name}.{ZEROCONF_TYPE}",
@@ -90,17 +90,17 @@ class ZeroconfManager:
         self.zmq = zmq.Context()
 
         self.publisher = Publisher(
-            context=self.zmq, 
-            port=self.port, 
+            context=self.zmq,
+            port=self.port,
             queue=self.publish_queue
         )
         self.zc.register_service(self.service_info)
         self.browser = ServiceBrowser(
-            self.zc, 
-            ZEROCONF_TYPE, 
+            self.zc,
+            ZEROCONF_TYPE,
             listener=self,
         )
-        
+
 
     def close(self):
         self.browser.cancel()
@@ -119,14 +119,14 @@ class ZeroconfManager:
             name = name.removesuffix("." + ZEROCONF_TYPE)
             logger.debug(f"Friend found: {name}@{address}:{svc.port}")
             subscriber = Subscriber(
-                self.zmq, 
-                name=name, 
-                ip=address, 
-                port=svc.port, 
+                self.zmq,
+                name=name,
+                ip=address,
+                port=svc.port,
                 queue=self.subscriber_queue
             )
             self.friends[svc.name] = subscriber
-            
+
 
     def remove_service(self, zeroconf, type, name):
         logger.debug(f"Friend lost: {name}")
@@ -142,8 +142,8 @@ def main(name: str, address: str, port: int, message: str):
 
         def writer():
             while not writer_shutdown.is_set():
-                z.publisher.write(message) 
-                time.sleep(2)       
+                z.publisher.write(message)
+                time.sleep(2)
 
         writer_thread = threading.Thread(target=writer, daemon=True).start()
 
@@ -169,8 +169,8 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     args = parse_args()
     main(
-        name=args.name, 
-        address=args.address, 
-        port=args.port, 
+        name=args.name,
+        address=args.address,
+        port=args.port,
         message=args.message
     )
