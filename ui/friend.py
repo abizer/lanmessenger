@@ -1,17 +1,20 @@
 from collections import OrderedDict
 from enum import Enum
+import pathlib
 import random
 import uuid
+
+DIR = pathlib.Path(__file__).parent
 
 ENABLE_MOCK_DATA = True
 
 class Friend:
     class Status(Enum):
         # Sending discovery pings and activity pings within past 15 minutes
-        ONLINE = 1   
+        ONLINE = 1
         # Sending discovery pings but no recent activity pings
-        AWAY   = 2 
-        # Not sending discovery pings 
+        AWAY   = 2
+        # Not sending discovery pings
         OFFLINE = 3
 
     def __init__(self, username, uuid=uuid.uuid4(), status=Status.ONLINE):
@@ -39,7 +42,8 @@ MOCK_FRIENDS[Friend("Rachel")] = []
 if ENABLE_MOCK_DATA:
     def populate_mock_data():
         stub_text = []
-        with open("declaration.txt") as f:
+        data_path = DIR / "data" / "declaration.txt"
+        with open(data_path) as f:
             for line in f.readlines():
                 l = line.strip()
                 if len(l) > 0:
@@ -62,6 +66,6 @@ if ENABLE_MOCK_DATA:
                     MOCK_FRIENDS[friend].append(incoming.pop())
             while len(outgoing) > 0:
                     MOCK_FRIENDS[friend].append(outgoing.pop())
-    
+
     populate_mock_data()
 
