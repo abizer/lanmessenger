@@ -120,19 +120,19 @@ class UI:
         self.chat_area = dpg.add_group(parent=self.content_area, width=-200, horizontal=False)
         with dpg.group(parent=self.chat_area, horizontal=False):
             self.scrollable_message_box = dpg.add_child_window(height=-70)
-            input_box = dpg.add_input_text(label="##Input Text", default_value="", tag="chat_input", on_enter=True)
+            self.input_box = dpg.add_input_text(label="##Input Text", default_value="", tag="chat_input", on_enter=True)
             def _on_submit(sender, data):
-                input = dpg.get_value(input_box).strip()
+                input = dpg.get_value(self.input_box).strip()
                 if len(input) > 0:
                     # clear box and refocus
-                    dpg.configure_item(input_box, default_value="")
-                    dpg.focus_item(input_box)
+                    dpg.configure_item(self.input_box, default_value="")
+                    dpg.focus_item(self.input_box)
 
                 if self.active_friend is not None:
                     MOCK_FRIENDS[self.active_friend].append(Message(input, True))
                     self.on_selected_friend_changed(self.active_friend, True)
 
-            dpg.configure_item(input_box, callback=_on_submit)
+            dpg.configure_item(self.input_box, callback=_on_submit)
             dpg.add_button(label="Submit", callback=_on_submit)
         self.goto_most_recent_message()
 
@@ -159,16 +159,22 @@ class UI:
         dpg.configure_item(self.friends_collapsable_header, default_open=True)
         self.on_selected_friend_changed(self.active_friend, force=True)
 
+    def tab_pressed_callback(self, sender, data):
+        dpg.focus_item(self.input_box)
+
+
     def viewport_changed_callback(self, sender, data):
         self.dim.width  = data[0]
         self.dim.height = data[1]
         logging.info(f"Viewport changed {self.dim.width, self.dim.height}")
         self.reflow_layout()
 
+
     def run(self):
         dpg.create_context()
         with dpg.handler_registry():
             dpg.set_viewport_resize_callback(self.viewport_changed_callback)
+            dpg.add_key_press_handler(key=dpg.mvKey_Tab, callback=self.tab_pressed_callback)
         self.register_fonts()
         self.create_layout()
         dpg.create_viewport(title='LAN Messenger',
