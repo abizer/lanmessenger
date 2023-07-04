@@ -117,7 +117,13 @@ class UI:
                             dpg.set_value(item, False)
                     self.on_selected_friend_changed(new_active_friend)
 
-                friends_list = [ dpg.add_selectable(label=friend.username) for friend in MOCK_FRIENDS.keys() ]
+                friends_list = []
+                for friend in MOCK_FRIENDS.keys():
+                    with dpg.group(horizontal=True):
+                        with dpg.drawlist(width=self.current_font_size, height=self.current_font_size):
+                            center = self.current_font_size//2+1
+                            dpg.draw_circle((center, center), 4, color=(71, 161, 78), fill=(71, 161, 78))
+                        friends_list.append(dpg.add_selectable(label=friend.username)) 
                 for item, friend in zip(friends_list, MOCK_FRIENDS.keys()): 
                     dpg.configure_item(item, callback=_friend_selection, user_data=(friend, friends_list))
 
