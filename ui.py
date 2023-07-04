@@ -165,7 +165,6 @@ class UI:
     def tab_pressed_callback(self, sender, data):
         dpg.focus_item(self.input_box)
 
-
     def viewport_changed_callback(self, sender, data):
         self.dim.width  = data[0]
         self.dim.height = data[1]
@@ -187,7 +186,8 @@ class UI:
                             min_height=self.min_dim.height)
         dpg.setup_dearpygui()
         dpg.show_viewport()
-        dpg.start_dearpygui()
+        while dpg.is_dearpygui_running():
+            dpg.render_dearpygui_frame()
         dpg.destroy_context()
 
 if __name__ == '__main__':
