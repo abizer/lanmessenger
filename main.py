@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import netifaces
 import socket
 import threading
 import time
@@ -9,6 +10,7 @@ import zmq
 import zmq.asyncio
 import logging
 from contextlib import closing
+import ipaddress
 
 import queue
 
@@ -67,20 +69,33 @@ class Subscriber:
             logger.error(f"error while shutting down subscriber for {self.name}@{self.ip}:{self.port}", exc_info=e)
 
 
+def get_lan_ips(v6=False):
+    ips  = set([])
+    family = netifaces.AF_INET6 if v6 else netifaces.AF_INET
+    for iface in netifaces.interfaces():
+        addresses = netifaces.ifaddresses(iface)
+        if family in addresses:
+            for addr in addresses[family]:
+                ip = ipaddress.IPv6Address(addr['addr']) if v6 else ipaddress.IPv4Address(addr['addr'])
+                if ip.is_private and not ip.is_loopback and not ip.is_link_local:
+                    ips.add(ip)
+    return ips
+
 class ZeroconfManager:
-    def __init__(self, name: str, address: str, port: int = 31337):
+    def __init__(self, name: str, port: int = 31337):
         self.hostname = socket.gethostname()
         self.name = name or f'officepal-{self.hostname}'
-        self.listen_address = address
         self.port = port
 
         self.publish_queue = queue.SimpleQueue()
         self.subscriber_queue = queue.SimpleQueue()
 
+        packed_ips = [ ip.packed for ip in (get_lan_ips() | get_lan_ips(v6=True)) ]
+
         self.service_info = ServiceInfo(
             ZEROCONF_TYPE,
             f"{self.name}.{ZEROCONF_TYPE}",
-            addresses=[socket.inet_aton(self.listen_address)],
+            addresses=packed_ips,
             port=port
         )
 
@@ -102,6 +117,7 @@ class ZeroconfManager:
         )
 
 
+
     def close(self):
         self.browser.cancel()
         self.zc.unregister_service(self.service_info)
@@ -114,14 +130,13 @@ class ZeroconfManager:
 
     def add_service(self, zeroconf, type, name):
         svc = zeroconf.get_service_info(type, name)
-        address = socket.inet_ntoa(svc.addresses[0])
         if svc.name != f"{self.name}.{ZEROCONF_TYPE}":
             name = name.removesuffix("." + ZEROCONF_TYPE)
             logger.debug(f"Friend found: {name}@{address}:{svc.port}")
             subscriber = Subscriber(
                 self.zmq,
-                name=name,
-                ip=address,
+                name=svc.name,
+                ip=socket.inet_ntoa(svc.addresses[0]),
                 port=svc.port,
                 queue=self.subscriber_queue
             )
@@ -130,14 +145,23 @@ class ZeroconfManager:
 
     def remove_service(self, zeroconf, type, name):
         logger.debug(f"Friend lost: {name}")
-        socket = self.friends.pop(name)
-        socket.close()
+        self.friends.pop(name)
 
     def update_service(self, zeroconf, type, name):
         pass
 
-def main(name: str, address: str, port: int, message: str):
-    with closing(ZeroconfManager(name=name, address=address, port=port)) as z:
+def parse_args():
+    hostname = socket.gethostname()
+    parser = argparse.ArgumentParser(description="officepal lanmessenger")
+
+    parser.add_argument('--name', type=str, default=f"officepal-{hostname}", help="Service name")
+    parser.add_argument('--port', type=int, default=31337, help='Listen port')
+    parser.add_argument('--message', type=str, default="Hello from officepal", help='Publish message')
+
+    return parser.parse_args()
+
+def main(name: str, port: int, message: str):
+    with closing(ZeroconfManager(port=port, name=name)) as z:
         writer_shutdown = threading.Event()
 
         def writer():
@@ -161,16 +185,10 @@ def parse_args():
     parser.add_argument('--name', type=str, default=f"officepal-{hostname}", help="Service name")
     parser.add_argument('--port', type=int, default=31337, help='Listen port')
     parser.add_argument('--message', type=str, default="Hello from officepal", help='Publish message')
-    parser.add_argument("--address", type=str)
 
     return parser.parse_args()
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     args = parse_args()
-    main(
-        name=args.name,
-        address=args.address,
-        port=args.port,
-        message=args.message
-    )
+    main(name=args.name, port=args.port, message=args.message)
