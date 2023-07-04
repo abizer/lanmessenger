@@ -128,16 +128,21 @@ def parse_args():
 
 def main(name: str, port: int, message: str):
     with closing(ZeroconfManager(port=port, name=name)) as z:
+        writer_shutdown = threading.Event()
+
         def writer():
-            while True:
+            while not writer_shutdown.is_set():
                 z.publisher.write(message) 
                 time.sleep(2)       
 
-        publish_thread = threading.Thread(target=writer, daemon=True).start()
+        writer_thread = threading.Thread(target=writer, daemon=True).start()
 
-        while True:
-            user, msg = z.subscriber_queue.get()
-            print(f"{msg} from {user}")
+        try:
+            while True:
+                user, msg = z.subscriber_queue.get()
+                print(f"{msg} from {user}")
+        except KeyboardInterrupt:
+            writer_shutdown.set()
 
 
 if __name__ == '__main__':
