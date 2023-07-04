@@ -34,40 +34,39 @@ class UI:
 
     # Scrolls to the end of the active chat window
     def goto_most_recent_message(self):
-        dpg.set_y_scroll(self.scrollable_message_box, -1.0)
-
-    # Empties the message box.
-    def clear_message_box(self):
-        dpg.delete_item(self.scrollable_message_box, children_only=True)
+        children = dpg.get_item_children(self.message_box_container, 1)
+        if len(children) > 0:
+            dpg.set_y_scroll(children[0], -1.0)
 
     # User seleted a new active friend
     def on_selected_friend_changed(self, friend, force=False):
         #logging.debug("on_selected_friend_changed: quick return " % friend)
-        if friend is None and self.active_friend is None:
-            return
-        if not force and (self.active_friend is not None and friend == self.active_friend):
-            return
+        friend_changed = False
+        if self.active_friend is None or self.active_friend != friend:
+            friend_changed = True
 
         self.active_friend = friend
-        logging.info(f"on_selected_friend_changed: ({friend.username})")
+        logging.info(f"on_selected_friend_changed: ({friend.username, friend_changed})")
 
-        self.clear_message_box()
+        if friend_changed or (force and self.active_friend is not None):
+            dpg.delete_item(self.message_box_container, children_only=True)
+            self.scrollable_message_box = dpg.add_child_window(horizontal_scrollbar=True, parent=self.message_box_container)
+            for message in MOCK_FRIENDS[friend]:
+                self.render_message(friend, message)
+            self.goto_most_recent_message()
+
+    def render_message(self, friend, message):
+        # unused for now in favor of the much simpler horizontal scrollbar
+        #wrap = dpg.get_item_state(self.chat_area)['rect_size'][0] - len(author_me) - 80
         author_me = (len(friend.username) - 2) * ' ' + "Me:"
         author_them = friend.username + ':'
         assert len(author_them) == len(author_me)
-
-        # unused for now in favor of the much simpler horizontal scrollbar
-        #wrap = dpg.get_item_state(self.chat_area)['rect_size'][0] - len(author_me) - 80
-
-        with dpg.child_window(horizontal_scrollbar=True, parent=self.scrollable_message_box):
-            for message in MOCK_FRIENDS[friend]:
-                with dpg.group(horizontal=True):
-                    if message.outgoing:
-                        dpg.add_text(default_value=author_me, color=(53, 116, 176))
-                    else:
-                        dpg.add_text(default_value=author_them, color=(227, 79, 68))
-                    dpg.add_text(default_value=message.content)
-        self.goto_most_recent_message()
+        with dpg.group(horizontal=True, parent=self.scrollable_message_box):
+            if message.outgoing:
+                dpg.add_text(default_value=author_me, color=(53, 116, 176))
+            else:
+                dpg.add_text(default_value=author_them, color=(227, 79, 68))
+            dpg.add_text(default_value=message.content)
 
     # New friend detected in the LAN, existing friend's online status changed
     def on_friends_list_changed(self):
@@ -121,7 +120,7 @@ class UI:
         # Chatbox
         self.chat_area = dpg.add_group(parent=self.content_area, width=-200, horizontal=False)
         with dpg.group(parent=self.chat_area, horizontal=False):
-            self.scrollable_message_box = dpg.add_child_window(height=-70)
+            self.message_box_container = dpg.add_child_window(height=-70)
             self.input_box = dpg.add_input_text(label="##Input Text", default_value="", tag="chat_input", on_enter=True)
             def _on_submit(sender, data):
                 input = dpg.get_value(self.input_box).strip()
@@ -130,9 +129,11 @@ class UI:
                     dpg.configure_item(self.input_box, default_value="")
                     dpg.focus_item(self.input_box)
 
-                if self.active_friend is not None:
-                    MOCK_FRIENDS[self.active_friend].append(Message(input, True))
-                    self.on_selected_friend_changed(self.active_friend, True)
+                    # Send the message
+                    if self.active_friend is not None:
+                        MOCK_FRIENDS[self.active_friend].append(Message(input, True))
+                        self.render_message(self.active_friend, MOCK_FRIENDS[self.active_friend][-1])
+                        self.goto_most_recent_message()
 
             dpg.configure_item(self.input_box, callback=_on_submit)
             dpg.add_button(label="Submit", callback=_on_submit)
