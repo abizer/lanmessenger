@@ -121,7 +121,31 @@ class ChatServer:
         logger.debug(f"{self.service_name} publishing message: {message}")
         await self.publisher.send_string(f"{topic} {message}")
 
+class Publisher:
+    def __init__(self, context, port: int):
+        self.port = port
+        self.context = context
+        self.sock = self.context.socket(zmq.PUB)
+        self.sock.bind(f"tcp://0.0.0.0:{port}")
+    
+    async def write(self, message):
+        await self.sock.send_string(message)
 
+class Subscriber:
+    def __init__(self, context, ip, port):
+        self.context = context 
+        self.ip = ip
+        self.port = port
+
+        self.sock = self.context.socket(zmq.SUB)
+        self.sock.connect(f"tcp://{ip}:{port}")
+        self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
+
+    async def get(self):
+        while True:
+            msg = await self.sock.recv_string()
+            yield msg
+            
 class ChatClient:
     def __init__(self, context, server_ip: str, port: int):
         self.server_ip = server_ip

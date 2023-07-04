@@ -1,4 +1,4 @@
 dearpygui
 pyzmq
 zeroconf
-
+netifaces
