@@ -3,6 +3,7 @@ import asyncio
 import socket
 import threading 
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
+from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
 import zmq
 import zmq.asyncio
 import logging
@@ -16,14 +17,45 @@ logger = logging.getLogger(__name__)
 ZEROCONF_TYPE = "_officepal._tcp.local."
 
 class ZeroconfManager:
-    def __init__(self):
-        self.zc = AsyncZeroconf() 
+    def __init__(self, port: int = 31337, name=""):
+        self.hostname = socket.gethostname()
+        self.name = name or f'officepal-{self.hostname}'
+        self.zc = Zeroconf() 
         
-        self.service_info = AsyncServiceInfo(
+        self.service_info = ServiceInfo(
             ZEROCONF_TYPE,
             f"{self.name}.{ZEROCONF_TYPE}",
-            addresses=[socket.gethostbyname('0.0.0.0')]
+            addresses=[socket.inet_aton('127.0.0.1')],
+            port=port
         )
+
+        self.zc.register_service(self.service_info)
+        self.friends = {}
+
+        self.browser = ServiceBrowser(
+            self.zc, 
+            ZEROCONF_TYPE, 
+            listener=self,
+        )
+
+    def __del__(self):
+        self.zc.unregister_service(self.service_info)
+
+    def add_service(self, zeroconf, type, name):
+        svc = zeroconf.get_service_info(type, name)
+        if svc.name != self.name:
+            logger.debug(f"Friend found: {svc.name}")
+            self.friends[svc.name] = f"tcp://{socket.inet_ntoa(svc.addresses[0])}:{svc.port}"
+            
+
+    def remove_service(self, zeroconf, type, name):
+        logger.debug(f"Friend lost: {name}")
+        self.friends.pop(name)
+
+    def update_service(self, zeroconf, type, name):
+        pass
+        
+            
 
 
 class Publisher:
