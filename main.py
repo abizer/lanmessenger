@@ -25,8 +25,6 @@ class ZeroconfManager:
 
         self.publish_queue = queue.SimpleQueue()
         self.subscriber_queue = queue.SimpleQueue()
-
-        self.publisher = Publisher(context=self.zmq, port=self.port, queue=self.publish_queue)
         
         self.service_info = ServiceInfo(
             ZEROCONF_TYPE,
@@ -35,17 +33,22 @@ class ZeroconfManager:
             port=port
         )
 
-        self.zc.register_service(self.service_info)
         self.friends = {}
 
+    def __enter__(self):
+        self.publisher = Publisher(context=self.zmq, port=self.port, queue=self.publish_queue)
+        self.zc.register_service(self.service_info)
         self.browser = ServiceBrowser(
             self.zc, 
             ZEROCONF_TYPE, 
             listener=self,
         )
 
-    def __del__(self):
+    def __exit__(self):
         self.zc.unregister_service(self.service_info)
+        self.publisher.sock.close()
+        for friend in self.friends.values():
+            friend.sock.close()
         self.zmq.term()
 
     def add_service(self, zeroconf, type, name):
@@ -113,17 +116,16 @@ def parse_args():
     return parser.parse_args()
 
 def main(args: argparse.Namespace):
-    z = ZeroconfManager(port=args.port, name=args.name)
+    with ZeroconfManager(port=args.port, name=args.name) as z:
+        def writer():
+            while True:
+                z.publisher.write(args.message) 
+                time.sleep(2)       
 
-    def writer():
+        publish_thread = threading.Thread(target=writer, daemon=True).start()
+
         while True:
-            z.publisher.write(args.message) 
-            time.sleep(2)       
-
-    publish_thread = threading.Thread(target=writer, daemon=True).start()
-
-    while True:
-        print(z.subscriber_queue.get())
+            print(z.subscriber_queue.get())
 
 
 if __name__ == '__main__':
