@@ -1,4 +1,5 @@
 from enum import Enum
+from friend import Friend
 import queue
 
 class EventType(Enum):
@@ -9,10 +10,10 @@ class EventType(Enum):
     # Message came in over the network
     MESSAGE_RECEIVED      = 3,
 
-def EventMessage():
-    def __init__(self, type, content):
+class EventMessage():
+    def __init__(self, type, payload):
         self.type    = type
-        self.content = content
+        self.payload = payload
 
 class EventQueue:
    def __init__(self):
@@ -26,8 +27,8 @@ class EventQueue:
          return None
 
    # put can be blocking
-   def put(self):
-      return self.fifo.put()
+   def put(self, item):
+      return self.fifo.put(item)
 
    def size(self):
       return self.fifo.qsize()

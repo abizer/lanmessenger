@@ -1,9 +1,14 @@
-from friend import Message, MOCK_FRIENDS
+from friend import Friend, Message
+from comms import EventMessage, EventQueue, EventType
 from util import clamp
 import dearpygui.dearpygui as dpg
 import logging
+import threading
+import mock
+import comms
 
-logging.basicConfig(encoding='utf-8', level=logging.INFO)
+# TODO(kkuehler): default to INFO and make configurable via cli argument
+logging.basicConfig(encoding='utf-8', level=logging.DEBUG)
 
 class Dimensions:
     def __init__(self, width, height):
@@ -23,6 +28,7 @@ class UI:
         self.current_font_size = 18
 
         self.active_friend = None
+        self.friends = {}
         
 
     def register_fonts(self):
@@ -44,6 +50,11 @@ class UI:
         dpg.configure_item(self.input_box, default_value="")
         dpg.focus_item(self.input_box)
 
+    def on_friend_discovered(self, friend:Friend):
+        logging.debug(f"EVENT: FRIEND_DISCOVERED: %s" % friend.username )
+        self.friends[friend] = []
+        self.on_friends_list_changed()
+
     # User seleted a new active friend
     def on_selected_friend_changed(self, friend, force=False):
         #logging.debug("on_selected_friend_changed: quick return " % friend)
@@ -57,7 +68,7 @@ class UI:
         if friend_changed or (force and self.active_friend is not None):
             dpg.delete_item(self.message_box_container, children_only=True)
             self.scrollable_message_box = dpg.add_child_window(horizontal_scrollbar=True, parent=self.message_box_container)
-            for message in MOCK_FRIENDS[friend]:
+            for message in self.friends[friend]:
                 self.render_message(friend, message)
             self.goto_most_recent_message()
             self.clear_input_box()
@@ -94,7 +105,7 @@ class UI:
                 self.on_selected_friend_changed(new_active_friend)
 
             friends_list = []
-            for i, friend in enumerate(MOCK_FRIENDS.keys()):
+            for i, friend in enumerate(self.friends.keys()):
                 with dpg.group(horizontal=True):
                     with dpg.drawlist(width=self.current_font_size, height=self.current_font_size):
                         center = self.current_font_size//2+1
@@ -103,7 +114,7 @@ class UI:
                         else:
                             dpg.draw_circle((center, center), center//2, color=COLOR_AWAY, fill=COLOR_AWAY_FILL)
                     friends_list.append(dpg.add_selectable(label=friend.username))
-            for item, friend in zip(friends_list, MOCK_FRIENDS.keys()):
+            for item, friend in zip(friends_list, self.friends.keys()):
                 dpg.configure_item(item, callback=_friend_selection, user_data=(friend, friends_list))
 
     # Creates the settings menu
@@ -134,8 +145,8 @@ class UI:
                 if len(input) > 0:
                     self.clear_input_box()
                     if self.active_friend is not None:
-                        MOCK_FRIENDS[self.active_friend].append(Message(input, True))
-                        self.render_message(self.active_friend, MOCK_FRIENDS[self.active_friend][-1])
+                        self.friends[self.active_friend].append(Message(input, True))
+                        self.render_message(self.active_friend, self.friends[self.active_friend][-1])
                         self.goto_most_recent_message()
 
             dpg.configure_item(self.input_box, callback=_on_submit)
@@ -163,7 +174,8 @@ class UI:
     def reflow_layout(self):
         dpg.configure_item(self.main_window, width=self.dim.width, height=self.dim.height)
         dpg.configure_item(self.friends_collapsable_header, default_open=True)
-        self.on_selected_friend_changed(self.active_friend, force=True)
+        if self.active_friend is not None:
+            self.on_selected_friend_changed(self.active_friend, force=True)
 
     def tab_pressed_callback(self, sender, data):
         dpg.focus_item(self.input_box)
@@ -189,7 +201,18 @@ class UI:
                             min_height=self.min_dim.height)
         dpg.setup_dearpygui()
         dpg.show_viewport()
+        self.rx_queue = EventQueue()
+        threading.Thread(target=mock.seed_friends, args=(self.rx_queue,), daemon=True).start()
         while dpg.is_dearpygui_running():
+            msg = self.rx_queue.get()
+            if msg is not None:
+                if msg.type == EventType.FRIEND_DISCOVERED:
+                    friend = msg.payload
+                    self.on_friend_discovered(friend)
+                if msg.type == EventType.FRIEND_STATUS_CHANGED:
+                    pass
+                if msg.type == EventType.MESSAGE_RECEIVED:
+                    pass
             dpg.render_dearpygui_frame()
         dpg.destroy_context()
 
