@@ -39,6 +39,11 @@ class UI:
         if len(children) > 0:
             dpg.set_y_scroll(children[0], -1.0)
 
+    def clear_input_box(self):
+        # clear box and refocus
+        dpg.configure_item(self.input_box, default_value="")
+        dpg.focus_item(self.input_box)
+
     # User seleted a new active friend
     def on_selected_friend_changed(self, friend, force=False):
         #logging.debug("on_selected_friend_changed: quick return " % friend)
@@ -55,6 +60,7 @@ class UI:
             for message in MOCK_FRIENDS[friend]:
                 self.render_message(friend, message)
             self.goto_most_recent_message()
+            self.clear_input_box()
 
     def render_message(self, friend, message):
         # unused for now in favor of the much simpler horizontal scrollbar
@@ -126,11 +132,7 @@ class UI:
             def _on_submit(sender, data):
                 input = dpg.get_value(self.input_box).strip()
                 if len(input) > 0:
-                    # clear box and refocus
-                    dpg.configure_item(self.input_box, default_value="")
-                    dpg.focus_item(self.input_box)
-
-                    # Send the message
+                    self.clear_input_box()
                     if self.active_friend is not None:
                         MOCK_FRIENDS[self.active_friend].append(Message(input, True))
                         self.render_message(self.active_friend, MOCK_FRIENDS[self.active_friend][-1])
