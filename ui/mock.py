@@ -38,7 +38,7 @@ def populate_mock_data():
 
 def mock_network_events(tx_queue: EventQueue, rx_queue: EventQueue):
     # Seed friend discovery
-    for name in ("Abizer", "Liam", "Rachel"):
+    for name in ("Abizer", "Daniel", "Liam", "Rachel"):
         sleep(random.randrange(1, 3))
         tx_queue.put(
             EventMessage(type=EventType.FRIEND_DISCOVERED, payload=Friend(name))

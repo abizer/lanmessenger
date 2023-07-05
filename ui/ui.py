@@ -245,8 +245,10 @@ class UI:
                 pass
 
     def process_tx_queue(self):
+        def _peekleft():
+            return self.local_tx_queue[0]
         while len(self.local_tx_queue) > 0:
-            event = self.local_tx_queue[0]  # peek
+            event = _peekleft()
             if not self.tx_queue.put_nonblocking(event):
                 break
             self.local_tx_queue.popleft()
