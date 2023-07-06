@@ -1,193 +1,98 @@
 import argparse
 import asyncio
+from typing import Set
 import netifaces
 import socket
 import threading
 import time
-from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
-from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
+
+
 import zmq
 import zmq.asyncio
 import logging
 from contextlib import closing
-import ipaddress
+
 
 import queue
 
+from lib.net import IPAddress, get_lan_ips, ZeroconfManager
+from lib.zmq import Publisher, Subscriber, available_messages
+
 logger = logging.getLogger(__name__)
 
-ZEROCONF_TYPE = "_officepal._tcp.local."
 
-
-class Publisher:
-    def __init__(self, context, port: int, queue: queue.SimpleQueue):
-        self.port = port
-        self.context = context
-        self.sock = self.context.socket(zmq.PUB)
-        self.sock.bind(f"tcp://0.0.0.0:{port}")
-        self.queue = queue
-
-        self.shutdown_event = threading.Event()
-        self.thread = threading.Thread(target=self.worker, daemon=True).start()
-
-    def worker(self):
-        while not self.shutdown_event.is_set():
-            msg = self.queue.get()
-            self.sock.send_string(msg)
-
-    def write(self, message):
-        self.queue.put(message)
-
-    def close(self):
-        self.shutdown_event.set()
-        self.sock.close()
-
-
-class Subscriber:
-    def __init__(self, context, name, ip, port, queue):
-        self.context = context
-        self.name = name
-        self.ip = ip
-        self.port = port
-        self.queue = queue
-
-        self.sock = self.context.socket(zmq.SUB)
-        self.sock.connect(f"tcp://{ip}:{port}")
-        self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
-
-        self.read_shutdown = threading.Event()
-        self.read_thread = threading.Thread(target=self.get, daemon=True).start()
-
-    def get(self):
-        while not self.read_shutdown.is_set():
-            self.queue.put((self.name, self.sock.recv_string()))
-
-    def close(self):
-        try:
-            self.read_shutdown.set()
-            self.sock.close()
-        except Exception as e:
-            logger.error(
-                f"error while shutting down subscriber for {self.name}@{self.ip}:{self.port}",
-                exc_info=e,
-            )
-
-
-def get_lan_ips(v6=False):
-    ips = set([])
-    family = netifaces.AF_INET6 if v6 else netifaces.AF_INET
-    for iface in netifaces.interfaces():
-        addresses = netifaces.ifaddresses(iface)
-        if family in addresses:
-            for addr in addresses[family]:
-                ip = (
-                    ipaddress.IPv6Address(addr["addr"])
-                    if v6
-                    else ipaddress.IPv4Address(addr["addr"])
-                )
-                if ip.is_private and not ip.is_loopback and not ip.is_link_local:
-                    ips.add(ip)
-    return ips
-
-
-class ZeroconfManager:
-    def __init__(self, name: str, port: int = 31337):
-        self.hostname = socket.gethostname()
-        self.name = name or f"officepal-{self.hostname}"
-        self.port = port
+class ZMQManager(ZeroconfManager):
+    def __init__(self, name: str, addresses: Set[IPAddress], port: int):
+        super().__init__(name, addresses, port)
 
         self.publish_queue = queue.SimpleQueue()
         self.subscriber_queue = queue.SimpleQueue()
 
-        packed_ips = [ip.packed for ip in (get_lan_ips() | get_lan_ips(v6=True))]
-
-        self.service_info = ServiceInfo(
-            ZEROCONF_TYPE,
-            f"{self.name}.{ZEROCONF_TYPE}",
-            addresses=packed_ips,
-            port=port,
-        )
-
-        self.friends = {}
-
-        self.zc = Zeroconf()
+        self.subscriptions = {}
         self.zmq = zmq.Context()
 
-        self.publisher = Publisher(
-            context=self.zmq, port=self.port, queue=self.publish_queue
-        )
-        self.zc.register_service(self.service_info)
-        self.browser = ServiceBrowser(
-            self.zc,
-            ZEROCONF_TYPE,
-            listener=self,
-        )
+        # for now, bind to 0.0.0.0
+        cxn = f"tcp://0.0.0.0:{port}"
+        self.publisher = Publisher(ctx=self.zmq, name=name, cxn=cxn)
 
     def close(self):
-        self.browser.cancel()
-        self.zc.unregister_service(self.service_info)
-        self.zc.close()
-
+        logger.debug("shutting down zmq sockets")
         self.publisher.close()
-        for friend in self.friends.values():
-            friend.close()
+        for sub in self.subscriptions.values():
+            sub.close()
         self.zmq.term()
 
-    def add_service(self, zeroconf, type, name):
-        svc = zeroconf.get_service_info(type, name)
-        address = socket.inet_ntoa(svc.addresses[0])
-        if svc.name != f"{self.name}.{ZEROCONF_TYPE}":
-            name = name.removesuffix("." + ZEROCONF_TYPE)
-            logger.debug(f"Friend found: {name}@{address}:{svc.port}")
-            subscriber = Subscriber(
-                self.zmq,
-                name=svc.name,
-                ip=address,
-                port=svc.port,
-                queue=self.subscriber_queue,
-            )
-            self.friends[svc.name] = subscriber
+        super().close()
 
-    def remove_service(self, zeroconf, type, name):
-        logger.debug(f"Friend lost: {name}")
-        self.friends.pop(name)
+    def make_address(self, *args):
+        return f"tcp://{super().make_address(*args)}"
 
-    def update_service(self, zeroconf, type, name):
-        pass
+    def add_service(self, *args):
+        # returns the connection string for the pal we just discovered
+        name, address = super().add_service(*args)
+        if address:
+            sub = Subscriber(ctx=self.zmq, name=name, cxn=address)
+            self.subscriptions[name] = sub
+            logger.debug(f"Adding ZMQ subscriber for {name}@{address}")
 
+    def remove_service(self, *args):
+        name, address = super().remove_service(*args)
 
-def parse_args():
-    hostname = socket.gethostname()
-    parser = argparse.ArgumentParser(description="officepal lanmessenger")
+        # __del__ will close the socket during GC
+        sub = self.subscriptions.pop(name, None)
+        if sub:
+            logger.debug(f"Removing ZMQ subscriber for {name}@{address}")
 
-    parser.add_argument(
-        "--name", type=str, default=f"officepal-{hostname}", help="Service name"
-    )
-    parser.add_argument("--port", type=int, default=31337, help="Listen port")
-    parser.add_argument(
-        "--message", type=str, default="Hello from officepal", help="Publish message"
-    )
+    def get_sock_name(self, fd) -> str:
+        for name, sock in self.subscriptions.items():
+            if fd == sock.sock.fileno():
+                return name
 
-    return parser.parse_args()
+    def get_messages(self):
+        socks = [s.sock for s in self.subscriptions.values()]
+        for fd, msg in available_messages(socks):
+            yield self.get_sock_name(fd), msg
 
 
 def main(name: str, port: int, message: str):
-    with closing(ZeroconfManager(port=port, name=name)) as z:
-        writer_shutdown = threading.Event()
+    addresses = get_lan_ips() | get_lan_ips(v6=True)
+    name = name or f"officepal-{socket.gethostname()}"
+
+    with closing(ZMQManager(name, addresses, port)) as z:
 
         def writer():
-            while not writer_shutdown.is_set():
-                z.publisher.write(message)
+            while True:
+                z.publisher.sock.send_string(message)
                 time.sleep(2)
 
         writer_thread = threading.Thread(target=writer, daemon=True).start()
 
-        try:
-            while True:
-                user, msg = z.subscriber_queue.get()
-                print(f"{msg} from {user}")
-        except KeyboardInterrupt:
-            writer_shutdown.set()
+        while z:
+            try:
+                for sock, msg in z.get_messages():
+                    print(sock, msg)
+            except KeyboardInterrupt:
+                break
 
 
 def parse_args():
