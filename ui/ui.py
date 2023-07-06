@@ -1,4 +1,4 @@
-from collections import deque, OrderedDict
+from collections import deque, OrderedDict, namedtuple
 from comms import EventMessage, EventQueue, EventType
 from friend import Friend, Message, FRIEND_LOOPBACK
 from mock import mock_network_events
@@ -11,10 +11,51 @@ import threading
 logging.basicConfig(encoding="utf-8", level=logging.DEBUG)
 
 
-class Dimensions:
-    def __init__(self, width, height):
-        self.width = width
-        self.height = height
+Dimensions = namedtuple("Dimensions", "width height")
+CircleColor = namedtuple("CircleColor", "outline fill")
+
+
+class CustomWidget:
+    COLOR_SELECTABLE_NO_BACKGROUND = (37, 37, 38)
+    COLOR_SELECTABLE_CLICKED = (51, 51, 55)
+    COLOR_SELECTABLE_NEW_MESSAGE = (148, 35, 166)
+
+    COLOR_STATUS_ONLINE = CircleColor((149, 196, 124), (183, 224, 162))
+    COLOR_STATUS_AWAY = CircleColor((237, 232, 74), (240, 237, 165))
+
+    @staticmethod
+    def button_selectable_theme(background_color):
+        with dpg.theme() as button_selectable_default_state:
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(
+                    dpg.mvThemeCol_Button,
+                    background_color,
+                    category=dpg.mvThemeCat_Core,
+                )
+                dpg.add_theme_style(dpg.mvStyleVar_ButtonTextAlign, 0, 0.5)
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 2, 2)
+        return button_selectable_default_state
+
+    @staticmethod
+    def selectable_with_status(
+        label, font_size, background_color=COLOR_SELECTABLE_NO_BACKGROUND
+    ):
+        padding_y = 2
+        with dpg.group(horizontal=True):
+            with dpg.drawlist(width=font_size, height=font_size + padding_y):
+                center = font_size // 2 + 1
+                dpg.draw_circle(
+                    (center, center + padding_y),
+                    center // 2,
+                    color=CustomWidget.COLOR_STATUS_ONLINE.outline,
+                    fill=CustomWidget.COLOR_STATUS_ONLINE.fill,
+                )
+            b = dpg.add_button(label=label, width=-1)
+            dpg.bind_item_theme(
+                b,
+                CustomWidget.button_selectable_theme(background_color=background_color),
+            )
+        return b
 
 
 class UI:
@@ -84,8 +125,8 @@ class UI:
     def render_message(self, friend, message):
         # unused for now in favor of the much simpler horizontal scrollbar
         # wrap = dpg.get_item_state(self.chat_area)['rect_size'][0] - len(author_me) - 80
-        spaces_you  = max(0, (len(friend.username) - len(FRIEND_LOOPBACK.username))) 
-        spaces_them = max(0, (len(FRIEND_LOOPBACK.username) - len(friend.username))) 
+        spaces_you = max(0, (len(friend.username) - len(FRIEND_LOOPBACK.username)))
+        spaces_them = max(0, (len(FRIEND_LOOPBACK.username) - len(friend.username)))
 
         author_me = spaces_you * " " + "You:"
         author_them = spaces_them * " " + friend.username + ":"
@@ -99,51 +140,47 @@ class UI:
 
     # New friend detected in the LAN, existing friend's online status changed
     def on_friends_list_changed(self):
-        COLOR_ONLINE = (149, 196, 124)
-        COLOR_ONLINE_FILL = (183, 224, 162)
-        COLOR_AWAY = (237, 232, 74)
-        COLOR_AWAY_FILL = (240, 237, 165)
-
         dpg.delete_item(self.friends_collapsable_header, children_only=True)
         with dpg.group(parent=self.friends_collapsable_header, horizontal=False):
 
             def _friend_selection(sender, app_data, user_data):
-                # Only a single friend can be selected at a time
                 new_active_friend = user_data[0]
                 friend_items = user_data[1]
                 for item in friend_items:
                     if item != sender:
-                        dpg.set_value(item, False)
+                        dpg.bind_item_theme(
+                            item,
+                            CustomWidget.button_selectable_theme(
+                                background_color=CustomWidget.COLOR_SELECTABLE_NO_BACKGROUND
+                            ),
+                        )
+                    else:
+                        dpg.bind_item_theme(
+                            item,
+                            CustomWidget.button_selectable_theme(
+                                background_color=CustomWidget.COLOR_SELECTABLE_CLICKED
+                            ),
+                        )
                 self.on_selected_friend_changed(new_active_friend)
 
-            friends_list = []
-            for i, friend in enumerate(self.friends.keys()):
-                with dpg.group(horizontal=True):
-                    with dpg.drawlist(
-                        width=self.current_font_size, height=self.current_font_size
-                    ):
-                        center = self.current_font_size // 2 + 1
-                        if i == 0:
-                            dpg.draw_circle(
-                                (center, center),
-                                center // 2,
-                                color=COLOR_ONLINE,
-                                fill=COLOR_ONLINE_FILL,
-                            )
-                        else:
-                            dpg.draw_circle(
-                                (center, center),
-                                center // 2,
-                                color=COLOR_AWAY,
-                                fill=COLOR_AWAY_FILL,
-                            )
-                    friends_list.append(dpg.add_selectable(label=friend.username))
-            for item, friend in zip(friends_list, self.friends.keys()):
+            selectables = []
+            for friend in self.friends.keys():
+                item = CustomWidget.selectable_with_status(
+                    label=friend.username, font_size=self.current_font_size
+                )
+                selectables.append(item)
+            for item, friend in zip(selectables, self.friends.keys()):
                 dpg.configure_item(
-                    item, callback=_friend_selection, user_data=(friend, friends_list)
+                    item, callback=_friend_selection, user_data=(friend, selectables)
                 )
                 if self.active_friend == friend:
-                    dpg.set_value(item, True)
+                    dpg.bind_item_theme(
+                        item,
+                        CustomWidget.button_selectable_theme(
+                            background_color=CustomWidget.COLOR_SELECTABLE_CLICKED
+                        ),
+                    )
+                # else if unread
 
     # Creates the settings menu
     def menu_bar(self):
