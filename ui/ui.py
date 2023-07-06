@@ -250,9 +250,13 @@ class UI:
             if msg.type == EventType.FRIEND_STATUS_CHANGED:
                 pass
             if msg.type == EventType.MESSAGE_RECEIVED:
-                self.friends[self.active_friend].append(msg.payload)
-                self.render_message(self.active_friend, msg.payload)
-                self.goto_most_recent_message()
+                self.friends[msg.payload.author].append(msg.payload)
+                if msg.payload.author == self.active_friend:
+                    self.render_message(msg.payload.author, msg.payload)
+                    self.goto_most_recent_message()
+                else:
+                    # Notify ???
+                    pass
 
     def process_tx_queue(self):
         def _peekleft():
