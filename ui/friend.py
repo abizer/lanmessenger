@@ -23,7 +23,14 @@ class Friend:
         return self.username == other.username and self.uuid == other.uuid
 
 
+FRIEND_LOOPBACK = Friend("You")
+
+
 class Message:
-    def __init__(self, content, outgoing):
+    def __init__(self, content: str, author: Friend, to: Friend):
         self.content = content
-        self.outgoing = outgoing
+        self.author = author
+        self.to = to
+
+    def is_loopback(self):
+        return self.author == self.to

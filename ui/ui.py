@@ -1,6 +1,6 @@
 from collections import deque, OrderedDict
 from comms import EventMessage, EventQueue, EventType
-from friend import Friend, Message
+from friend import Friend, Message, FRIEND_LOOPBACK
 from mock import mock_network_events
 from util import clamp
 import dearpygui.dearpygui as dpg
@@ -30,6 +30,7 @@ class UI:
         self.current_font_size = 18
 
         self.friends = OrderedDict()
+        self.friends[FRIEND_LOOPBACK] = []
         self.active_friend = None
 
         self.rx_queue = EventQueue()
@@ -87,7 +88,7 @@ class UI:
         author_them = friend.username + ":"
         assert len(author_them) == len(author_me)
         with dpg.group(horizontal=True, parent=self.scrollable_message_box):
-            if message.outgoing:
+            if message.author == FRIEND_LOOPBACK:
                 dpg.add_text(default_value=author_me, color=(53, 116, 176))
             else:
                 dpg.add_text(default_value=author_them, color=(227, 79, 68))
@@ -178,11 +179,13 @@ class UI:
                 if len(input) > 0:
                     self.clear_input_box()
                     if self.active_friend is not None:
-                        self.friends[self.active_friend].append(Message(input, True))
-                        content = self.friends[self.active_friend][-1]
-                        self.render_message(self.active_friend, content)
+                        msg = Message(
+                            input, author=FRIEND_LOOPBACK, to=self.active_friend
+                        )
+                        self.friends[self.active_friend].append(msg)
+                        self.render_message(self.active_friend, msg)
                         self.goto_most_recent_message()
-                        self.enqueue_event(EventType.MESSAGE_SENT, content)
+                        self.enqueue_event(EventType.MESSAGE_SENT, msg)
 
             dpg.configure_item(self.input_box, callback=_on_submit)
             dpg.add_button(label="Submit", callback=_on_submit)
@@ -242,11 +245,14 @@ class UI:
             if msg.type == EventType.FRIEND_STATUS_CHANGED:
                 pass
             if msg.type == EventType.MESSAGE_RECEIVED:
-                pass
+                self.friends[self.active_friend].append(msg.payload)
+                self.render_message(self.active_friend, msg.payload)
+                self.goto_most_recent_message()
 
     def process_tx_queue(self):
         def _peekleft():
             return self.local_tx_queue[0]
+
         while len(self.local_tx_queue) > 0:
             event = _peekleft()
             if not self.tx_queue.put_nonblocking(event):
