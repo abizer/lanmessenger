@@ -65,7 +65,7 @@ class UI:
     def on_selected_friend_changed(self, friend, force=False):
         # logging.debug("on_selected_friend_changed: quick return " % friend)
         friend_changed = False
-        if self.active_friend is None or self.active_friend != friend:
+        if self.active_friend != friend:
             friend_changed = True
 
         self.active_friend = friend
@@ -142,6 +142,8 @@ class UI:
                 dpg.configure_item(
                     item, callback=_friend_selection, user_data=(friend, friends_list)
                 )
+                if self.active_friend == friend:
+                    dpg.set_value(item, True)
 
     # Creates the settings menu
     def menu_bar(self):

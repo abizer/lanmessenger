@@ -20,6 +20,8 @@ class Friend:
         return hash(self.uuid)
 
     def __eq__(self, other):
+        if other == None:
+            return False
         return self.username == other.username and self.uuid == other.uuid
 
 
