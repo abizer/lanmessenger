@@ -84,8 +84,11 @@ class UI:
     def render_message(self, friend, message):
         # unused for now in favor of the much simpler horizontal scrollbar
         # wrap = dpg.get_item_state(self.chat_area)['rect_size'][0] - len(author_me) - 80
-        author_me = (len(friend.username) - 2) * " " + "Me:"
-        author_them = friend.username + ":"
+        spaces_you  = max(0, (len(friend.username) - len(FRIEND_LOOPBACK.username))) 
+        spaces_them = max(0, (len(FRIEND_LOOPBACK.username) - len(friend.username))) 
+
+        author_me = spaces_you * " " + "You:"
+        author_them = spaces_them * " " + friend.username + ":"
         assert len(author_them) == len(author_me)
         with dpg.group(horizontal=True, parent=self.scrollable_message_box):
             if message.author == FRIEND_LOOPBACK:
