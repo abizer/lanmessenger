@@ -24,8 +24,13 @@ class CustomWidget:
     COLOR_STATUS_ONLINE = CircleColor((149, 196, 124), (183, 224, 162))
     COLOR_STATUS_AWAY = CircleColor((237, 232, 74), (240, 237, 165))
 
+    _cached_themes = {}
+
     @staticmethod
     def button_selectable_theme(background_color):
+        if background_color in CustomWidget._cached_themes:
+            return CustomWidget._cached_themes[background_color]
+
         with dpg.theme() as button_selectable_default_state:
             with dpg.theme_component(dpg.mvAll):
                 dpg.add_theme_color(
@@ -35,6 +40,7 @@ class CustomWidget:
                 )
                 dpg.add_theme_style(dpg.mvStyleVar_ButtonTextAlign, 0, 0.5)
                 dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 2, 2)
+        CustomWidget._cached_themes[background_color] = button_selectable_default_state
         return button_selectable_default_state
 
     @staticmethod
@@ -54,7 +60,7 @@ class CustomWidget:
             b = dpg.add_button(label=label, width=-1)
             dpg.bind_item_theme(
                 b,
-                CustomWidget.button_selectable_theme(background_color=background_color),
+                CustomWidget.button_selectable_theme(background_color),
             )
         return b
 
@@ -89,9 +95,7 @@ class UI:
 
     # Scrolls to the end of the active chat window
     def goto_most_recent_message(self):
-        children = dpg.get_item_children(self.message_box_container, 1)
-        if len(children) > 0:
-            dpg.set_y_scroll(children[0], -1.0)
+        dpg.set_y_scroll(self.message_box_container, -1.0)
 
     def clear_input_box(self):
         # clear box and refocus
@@ -116,9 +120,6 @@ class UI:
 
         if friend_changed or (force and self.active_friend is not None):
             dpg.delete_item(self.message_box_container, children_only=True)
-            self.scrollable_message_box = dpg.add_child_window(
-                horizontal_scrollbar=True, parent=self.message_box_container
-            )
             for message in self.friends[friend]:
                 self.render_message(friend, message)
             self.goto_most_recent_message()
@@ -133,7 +134,7 @@ class UI:
         author_me = spaces_you * " " + "You:"
         author_them = spaces_them * " " + friend.username + ":"
         assert len(author_them) == len(author_me)
-        with dpg.group(horizontal=True, parent=self.scrollable_message_box):
+        with dpg.group(horizontal=True, parent=self.message_box_container):
             if message.author == FRIEND_LOOPBACK:
                 dpg.add_text(default_value=author_me, color=(53, 116, 176))
             else:
@@ -150,18 +151,16 @@ class UI:
                 friend_items = user_data[1]
                 for item in friend_items:
                     if item != sender:
-                        dpg.bind_item_theme(
-                            item,
-                            CustomWidget.button_selectable_theme(
-                                background_color=CustomWidget.COLOR_SELECTABLE_NO_BACKGROUND
-                            ),
-                        )
+                        theme = dpg.get_item_theme(item)
+                        if theme == CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_CLICKED):
+                            dpg.bind_item_theme(
+                                item,
+                                CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_NO_BACKGROUND),
+                            )
                     else:
                         dpg.bind_item_theme(
                             item,
-                            CustomWidget.button_selectable_theme(
-                                background_color=CustomWidget.COLOR_SELECTABLE_CLICKED
-                            ),
+                            CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_CLICKED),
                         )
                 self.on_selected_friend_changed(new_active_friend)
 
@@ -178,16 +177,12 @@ class UI:
                 if self.active_friend == friend:
                     dpg.bind_item_theme(
                         item,
-                        CustomWidget.button_selectable_theme(
-                            background_color=CustomWidget.COLOR_SELECTABLE_CLICKED
-                        ),
+                        CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_CLICKED),
                     )
                 elif friend.has_unread:
                     dpg.bind_item_theme(
                         item,
-                        CustomWidget.button_selectable_theme(
-                            background_color=CustomWidget.COLOR_SELECTABLE_NEW_MESSAGE
-                        ),
+                        CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_NEW_MESSAGE),
                     )
 
     # Creates the settings menu
@@ -219,7 +214,7 @@ class UI:
             parent=self.content_area, width=-200, horizontal=False
         )
         with dpg.group(parent=self.chat_area, horizontal=False):
-            self.message_box_container = dpg.add_child_window(height=-70)
+            self.message_box_container = dpg.add_child_window(height=-70, horizontal_scrollbar=True)
             self.input_box = dpg.add_input_text(
                 label="##Input Text", default_value="", tag="chat_input", on_enter=True
             )
