@@ -1,6 +1,6 @@
-from friend import Friend, Message
+from ui.friend import Friend, Message
+from ui.comms import EventMessage, EventQueue, EventType
 from time import sleep
-from comms import EventMessage, EventQueue, EventType
 import random
 import re
 import pathlib

@@ -1,5 +1,5 @@
 from enum import Enum
-from friend import Friend
+from ui.friend import Friend
 import queue
 
 

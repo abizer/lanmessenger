@@ -1,9 +1,11 @@
 from collections import deque, OrderedDict, namedtuple
-from comms import EventMessage, EventQueue, EventType
-from friend import Friend, Message, FRIEND_LOOPBACK
+
+from ui.comms import EventMessage, EventQueue, EventType
+from ui.friend import Friend, Message, FRIEND_LOOPBACK
+from ui.mock import mock_network_events
+from ui.util import clamp
+
 from copy import deepcopy
-from mock import mock_network_events
-from util import clamp
 import dearpygui.dearpygui as dpg
 import logging
 import threading
@@ -152,15 +154,21 @@ class UI:
                 for item in friend_items:
                     if item != sender:
                         theme = dpg.get_item_theme(item)
-                        if theme == CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_CLICKED):
+                        if theme == CustomWidget.button_selectable_theme(
+                            CustomWidget.COLOR_SELECTABLE_CLICKED
+                        ):
                             dpg.bind_item_theme(
                                 item,
-                                CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_NO_BACKGROUND),
+                                CustomWidget.button_selectable_theme(
+                                    CustomWidget.COLOR_SELECTABLE_NO_BACKGROUND
+                                ),
                             )
                     else:
                         dpg.bind_item_theme(
                             item,
-                            CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_CLICKED),
+                            CustomWidget.button_selectable_theme(
+                                CustomWidget.COLOR_SELECTABLE_CLICKED
+                            ),
                         )
                 self.on_selected_friend_changed(new_active_friend)
 
@@ -177,12 +185,16 @@ class UI:
                 if self.active_friend == friend:
                     dpg.bind_item_theme(
                         item,
-                        CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_CLICKED),
+                        CustomWidget.button_selectable_theme(
+                            CustomWidget.COLOR_SELECTABLE_CLICKED
+                        ),
                     )
                 elif friend.has_unread:
                     dpg.bind_item_theme(
                         item,
-                        CustomWidget.button_selectable_theme(CustomWidget.COLOR_SELECTABLE_NEW_MESSAGE),
+                        CustomWidget.button_selectable_theme(
+                            CustomWidget.COLOR_SELECTABLE_NEW_MESSAGE
+                        ),
                     )
 
     # Creates the settings menu
@@ -214,7 +226,9 @@ class UI:
             parent=self.content_area, width=-200, horizontal=False
         )
         with dpg.group(parent=self.chat_area, horizontal=False):
-            self.message_box_container = dpg.add_child_window(height=-70, horizontal_scrollbar=True)
+            self.message_box_container = dpg.add_child_window(
+                height=-70, horizontal_scrollbar=True
+            )
             self.input_box = dpg.add_input_text(
                 label="##Input Text", default_value="", tag="chat_input", on_enter=True
             )
@@ -328,9 +342,6 @@ class UI:
         dpg.setup_dearpygui()
         dpg.show_viewport()
 
-        threading.Thread(
-            target=mock_network_events, args=(self.rx_queue, self.tx_queue), daemon=True
-        ).start()
         while dpg.is_dearpygui_running():
             self.process_rx_queue()
             self.process_tx_queue()
@@ -340,4 +351,7 @@ class UI:
 
 if __name__ == "__main__":
     ui = UI()
+    threading.Thread(
+        target=mock_network_events, args=(ui.rx_queue, ui.tx_queue), daemon=True
+    ).start()
     ui.run()

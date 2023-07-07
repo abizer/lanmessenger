@@ -5,7 +5,7 @@ import netifaces
 import socket
 import threading
 import time
-
+import ui.interface as ui
 
 import zmq
 import zmq.asyncio
@@ -53,7 +53,8 @@ class ZMQManager(ZeroconfManager):
         name, address = super().add_service(*args)
         if address:
             sub = Subscriber(ctx=self.zmq, name=name, cxn=address)
-            self.subscriptions[name] = sub
+            with self.mutex:
+                self.subscriptions[name] = sub
             logger.debug(f"Adding ZMQ subscriber for {name}@{address}")
 
     def remove_service(self, *args):
@@ -77,25 +78,38 @@ class ZMQManager(ZeroconfManager):
                 yield self.get_sock_name(fd), msg
 
 
+class Middleware:
+    def __init__(self):
+        self.ui = ui.UI()
+        self.tx_queue = self.ui.rx_queue
+        self.rx_queue = self.ui.tx_queue
+
+    def start(self, zmq, message):
+        def _reader_thread():
+            while zmq:
+                try:
+                    for sock, msg in zmq.get_messages():
+                        print(sock, msg)
+                except KeyboardInterrupt:
+                    break
+
+        def _writer_thread():
+            while True:
+                zmq.publisher.sock.send_string(message)
+                time.sleep(2)
+
+        threading.Thread(target=_reader_thread, daemon=True).start()
+        threading.Thread(target=_writer_thread, daemon=True).start()
+        self.ui.run()
+
+
 def main(name: str, port: int, message: str):
     addresses = get_lan_ips() | get_lan_ips(v6=True)
     name = name or f"officepal-{socket.gethostname()}"
 
-    with closing(ZMQManager(name, addresses, port)) as z:
-
-        def writer():
-            while True:
-                z.publisher.sock.send_string(message)
-                time.sleep(2)
-
-        writer_thread = threading.Thread(target=writer, daemon=True).start()
-
-        while z:
-            try:
-                for sock, msg in z.get_messages():
-                    print(sock, msg)
-            except KeyboardInterrupt:
-                break
+    with closing(ZMQManager(name, addresses, port)) as zmq:
+        middleware = Middleware()
+        middleware.start(zmq, message)
 
 
 def parse_args():
