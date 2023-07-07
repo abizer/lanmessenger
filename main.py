@@ -30,6 +30,7 @@ class ZMQManager(ZeroconfManager):
 
         self.subscriptions = {}
         self.zmq = zmq.Context()
+        self.mutex = threading.Lock()
 
         # for now, bind to 0.0.0.0
         cxn = f"tcp://0.0.0.0:{port}"
@@ -58,10 +59,11 @@ class ZMQManager(ZeroconfManager):
     def remove_service(self, *args):
         name, address = super().remove_service(*args)
 
-        # __del__ will close the socket during GC
-        sub = self.subscriptions.pop(name, None)
-        if sub:
-            logger.debug(f"Removing ZMQ subscriber for {name}@{address}")
+        with self.mutex:
+            # __del__ will close the socket during GC
+            sub = self.subscriptions.pop(name, None)
+            if sub:
+                logger.debug(f"Removing ZMQ subscriber for {name}@{address}")
 
     def get_sock_name(self, fd) -> str:
         for name, sock in self.subscriptions.items():
@@ -69,9 +71,10 @@ class ZMQManager(ZeroconfManager):
                 return name
 
     def get_messages(self):
-        socks = [s.sock for s in self.subscriptions.values()]
-        for fd, msg in available_messages(socks):
-            yield self.get_sock_name(fd), msg
+        with self.mutex:
+            socks = [s.sock for s in self.subscriptions.values()]
+            for fd, msg in available_messages(socks):
+                yield self.get_sock_name(fd), msg
 
 
 def main(name: str, port: int, message: str):

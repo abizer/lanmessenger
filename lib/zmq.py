@@ -34,6 +34,9 @@ class ZMQ:
     def close(self):
         self.sock.close()
 
+    def is_closed(self):
+        return self.sock.closed
+
     def __del__(self):
         self.close()
 
