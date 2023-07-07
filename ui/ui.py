@@ -270,8 +270,7 @@ class UI:
         dpg.focus_item(self.input_box)
 
     def viewport_changed_callback(self, sender, data):
-        self.dim.width = data[0]
-        self.dim.height = data[1]
+        self.dim = self.dim._replace(width=data[0], height=data[1])
         logging.info(f"Viewport changed {self.dim.width, self.dim.height}")
         self.reflow_layout()
 
