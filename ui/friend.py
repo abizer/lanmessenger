@@ -15,6 +15,7 @@ class Friend:
         self.username = username
         self.status = status
         self.uuid = uuid
+        self.has_unread = False
 
     def __hash__(self):
         return hash(self.uuid)

@@ -1,6 +1,7 @@
 from collections import deque, OrderedDict, namedtuple
 from comms import EventMessage, EventQueue, EventType
 from friend import Friend, Message, FRIEND_LOOPBACK
+from copy import deepcopy
 from mock import mock_network_events
 from util import clamp
 import dearpygui.dearpygui as dpg
@@ -99,7 +100,7 @@ class UI:
 
     def on_friend_discovered(self, friend: Friend):
         logging.debug(f"EVENT: FRIEND_DISCOVERED: %s" % friend.username)
-        self.friends[friend] = []
+        self.friends[deepcopy(friend)] = []
         self.on_friends_list_changed()
 
     # User seleted a new active friend
@@ -110,6 +111,7 @@ class UI:
             friend_changed = True
 
         self.active_friend = friend
+        self.active_friend.has_unread = False
         logging.info(f"on_selected_friend_changed: ({friend.username, friend_changed})")
 
         if friend_changed or (force and self.active_friend is not None):
@@ -180,7 +182,13 @@ class UI:
                             background_color=CustomWidget.COLOR_SELECTABLE_CLICKED
                         ),
                     )
-                # else if unread
+                elif friend.has_unread:
+                    dpg.bind_item_theme(
+                        item,
+                        CustomWidget.button_selectable_theme(
+                            background_color=CustomWidget.COLOR_SELECTABLE_NEW_MESSAGE
+                        ),
+                    )
 
     # Creates the settings menu
     def menu_bar(self):
@@ -292,8 +300,10 @@ class UI:
                     self.render_message(msg.payload.author, msg.payload)
                     self.goto_most_recent_message()
                 else:
-                    # Notify ???
-                    pass
+                    for friend in self.friends.keys():
+                        if friend == msg.payload.author:
+                            friend.has_unread = True
+                            self.on_friends_list_changed()
 
     def process_tx_queue(self):
         def _peekleft():
