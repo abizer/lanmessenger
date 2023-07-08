@@ -344,7 +344,9 @@ class UI:
 
         if mock:
             threading.Thread(
-                target=mock_network_events, args=(self.rx_queue, self.tx_queue), daemon=True
+                target=mock_network_events,
+                args=(self.rx_queue, self.tx_queue),
+                daemon=True,
             ).start()
         while dpg.is_dearpygui_running():
             self.process_rx_queue()

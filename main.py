@@ -1,91 +1,24 @@
 import argparse
-import asyncio
-from typing import Set
-import netifaces
 import socket
 import threading
 import time
-import queue
 import ui.interface as ui
-
-import zmq
-import zmq.asyncio
 import logging
 from contextlib import closing
-from enum import Enum
 
-
-import queue
-
-from lib.net import IPAddress, get_lan_ips, ZeroconfManager
-from lib.zmq import Publisher, Subscriber, available_messages
+from lib.util import get_lan_ips
+from lib.net import ZMQManager, ZeroInterface, Subscriber
 
 logger = logging.getLogger(__name__)
+
 
 class EventMessage:
     def __init__(self, type, payload):
         self.type = type
         self.payload = payload
 
-class ZMQManager(ZeroconfManager):
-    def __init__(self, name: str, addresses: Set[IPAddress], port: int):
-        super().__init__(name, addresses, port)
 
-        self.publish_queue = queue.SimpleQueue()
-        self.subscriber_queue = queue.SimpleQueue()
-        self.network_events = queue.Queue()
-
-        self.subscriptions = {}
-        self.zmq = zmq.Context()
-        self.mutex = threading.Lock()
-
-        # for now, bind to 0.0.0.0
-        cxn = f"tcp://0.0.0.0:{port}"
-        self.publisher = Publisher(ctx=self.zmq, name=name, cxn=cxn)
-
-    def close(self):
-        logger.debug("shutting down zmq sockets")
-        self.publisher.close()
-        for sub in self.subscriptions.values():
-            sub.close()
-        self.zmq.term()
-
-        super().close()
-
-    def make_address(self, *args):
-        return f"tcp://{super().make_address(*args)}"
-
-    def add_service(self, *args):
-        # returns the connection string for the pal we just discovered
-        name, address = super().add_service(*args)
-        if address:
-            sub = Subscriber(ctx=self.zmq, name=name, cxn=address)
-            with self.mutex:
-                self.subscriptions[name] = sub
-            logger.debug(f"Adding ZMQ subscriber for {name}@{address}")
-
-    def remove_service(self, *args):
-        name, address = super().remove_service(*args)
-
-        with self.mutex:
-            # __del__ will close the socket during GC
-            sub = self.subscriptions.pop(name, None)
-            if sub:
-                logger.debug(f"Removing ZMQ subscriber for {name}@{address}")
-
-    def get_sock_name(self, fd) -> str:
-        for name, sock in self.subscriptions.items():
-            if fd == sock.sock.fileno():
-                return name
-
-    def get_messages(self):
-        with self.mutex:
-            socks = [s.sock for s in self.subscriptions.values()]
-            for fd, msg in available_messages(socks):
-                yield self.get_sock_name(fd), msg
-
-
-class Middleware:
+class Middleware(ZeroInterface):
     def __init__(self):
         self.ui = ui.UI()
         self.tx_queue = self.ui.rx_queue
@@ -109,17 +42,26 @@ class Middleware:
         threading.Thread(target=_ui_events_thread, daemon=True).start()
         self.ui.run()
 
+    def on_host_discovered(self, subscriber: Subscriber):
+        logger.info("on_host_discovered(): %s" % subscriber.name)
+
+    def on_host_lost(self, subscriber: Subscriber):
+        logger.info("on_host_lost(): %s " % subscriber.name)
+
+    def on_new_message(self, subscriber: Subscriber, message: str):
+        pass
+
 
 def main(name: str, port: int, message: str, mock):
     if mock:
         interface = ui.UI()
-        interface.run(True)
+        interface.run(mock=True)
     else:
         addresses = get_lan_ips() | get_lan_ips(v6=True)
         name = name or f"officepal-{socket.gethostname()}"
 
-        with closing(ZMQManager(name, addresses, port)) as zmq:
-            middleware = Middleware()
+        middleware = Middleware()
+        with closing(ZMQManager(middleware, name, addresses, port)) as zmq:
             middleware.start(zmq, message)
 
 
@@ -134,7 +76,9 @@ def parse_args():
     parser.add_argument(
         "--message", type=str, default="Hello from officepal", help="Publish message"
     )
-    parser.add_argument("--mock", action='store_true', default=False, help="Run the mock UI")
+    parser.add_argument(
+        "--mock", action="store_true", default=False, help="Run the mock UI"
+    )
 
     return parser.parse_args()
 

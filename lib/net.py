@@ -1,46 +1,91 @@
-import socket
-from typing import Callable, List, Optional, Set, Union
-import netifaces
-from ipaddress import IPv4Address, IPv6Address
-
+from abc import ABC, abstractmethod
+from typing import List, Set
+from typing import List, Tuple
 import logging
-
-# from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
+import queue
+import socket
+import socket
+import threading
+import zmq
 from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
+
+from lib.util import IPAddress
 
 logger = logging.getLogger(__name__)
 
 ZEROCONF_TYPE = "_officepal._tcp.local."
 
-IPAddress = Union[IPv4Address, IPv6Address]
+
+def available_messages(sockets: List["Subscriber"]) -> Tuple[str, str]:
+    try:
+        r, _, _ = zmq.select(sockets, [], [], timeout=0.1)
+        return [(sock.fileno(), sock.recv_string()) for sock in r if sock]
+    except zmq.error.ZMQError as e:
+        logger.error(f"error while reading from zmq socket: {e}")
+        return []
 
 
-def get_lan_ips(v6=False) -> Set[IPAddress]:
-    ips = set()
-    family = netifaces.AF_INET6 if v6 else netifaces.AF_INET
-    for iface in netifaces.interfaces():
-        addresses = netifaces.ifaddresses(iface)
-        if family in addresses:
-            for addr in addresses[family]:
-                ip = IPv6Address(addr["addr"]) if v6 else IPv4Address(addr["addr"])
-                if ip.is_private and not ip.is_loopback and not ip.is_link_local:
-                    ips.add(ip)
-    return ips
+class ZMQ:
+    ctx: zmq.Context
+    sock: zmq.Socket
+    name: str
+
+    def __init__(self, ctx: zmq.Context, socktype: zmq.SocketType, name: str, cxn: str):
+        self.ctx = ctx
+        self.socktype = socktype
+        self.name = name
+        self.cxn = cxn
+
+        self.sock = self.ctx.socket(self.socktype)
+
+    def close(self):
+        self.sock.close()
+
+    def is_closed(self):
+        return self.sock.closed
+
+    def __del__(self):
+        self.close()
 
 
-def make_service_info(name: str, addresses: List[str], port: int) -> ServiceInfo:
-    service_info = ServiceInfo(
-        type_=ZEROCONF_TYPE,
-        name=f"{name}.{ZEROCONF_TYPE}",
-        port=port,
-        addresses=[ip.packed for ip in addresses],
-    )
-    return service_info
+class Publisher(ZMQ):
+    def __init__(self, ctx: zmq.Context, name: str, cxn: str):
+        super().__init__(ctx, zmq.PUB, name, cxn)
+
+        self.sock.bind(self.cxn)
+
+
+class Subscriber(ZMQ):
+    def __init__(self, ctx: zmq.Context, name: str, cxn: str):
+        super().__init__(ctx, zmq.SUB, name, cxn)
+
+        self.sock.connect(self.cxn)
+        self.sock.setsockopt_string(zmq.SUBSCRIBE, "")
+
+
+class ZeroInterface(ABC):
+    @abstractmethod
+    def on_host_discovered(self, subscriber: Subscriber):
+        ...
+
+    @abstractmethod
+    def on_host_lost(self, subscriber: Subscriber):
+        ...
+
+    @abstractmethod
+    def on_new_message(self, subscriber: Subscriber, message: str):
+        ...
 
 
 class ZeroconfManager:
-    def __init__(self, name: str, addresses: List[str], port: int):
-        self.service_info = make_service_info(name, addresses, port)
+    def __init__(self, ziface: ZeroInterface, name: str, addresses: List[str], port: int):
+        self.ziface = ziface
+        self.service_info = ServiceInfo(
+            type_=ZEROCONF_TYPE,
+            name=f"{name}.{ZEROCONF_TYPE}",
+            port=port,
+            addresses=[ip.packed for ip in addresses],
+        )
         self.friends = {}
 
         self.zc = Zeroconf()
@@ -78,3 +123,66 @@ class ZeroconfManager:
 
     def update_service(self, zeroconf, type, name):
         pass
+
+
+class ZMQManager(ZeroconfManager):
+    def __init__(
+        self, ziface: ZeroInterface, name: str, addresses: Set[IPAddress], port: int
+    ):
+        super().__init__(ziface, name, addresses, port)
+
+        self.publish_queue = queue.SimpleQueue()
+        self.subscriber_queue = queue.SimpleQueue()
+        self.network_events = queue.Queue()
+
+        self.subscriptions = {}
+        self.zmq = zmq.Context()
+        self.mutex = threading.Lock()
+
+        # for now, bind to 0.0.0.0
+        cxn = f"tcp://0.0.0.0:{port}"
+        self.publisher = Publisher(ctx=self.zmq, name=name, cxn=cxn)
+
+    def close(self):
+        logger.debug("shutting down zmq sockets")
+        self.publisher.close()
+        for sub in self.subscriptions.values():
+            sub.close()
+        self.zmq.term()
+
+        super().close()
+
+    def make_address(self, *args):
+        return f"tcp://{super().make_address(*args)}"
+
+    def add_service(self, *args):
+        # returns the connection string for the pal we just discovered
+        name, address = super().add_service(*args)
+        if address:
+            logger.debug(f"Adding ZMQ subscriber for {name}@{address}")
+            sub = Subscriber(ctx=self.zmq, name=name, cxn=address)
+            with self.mutex:
+                self.subscriptions[name] = sub
+            self.ziface.on_host_discovered(sub)
+
+    def remove_service(self, *args):
+        name, address = super().remove_service(*args)
+        self.ziface.on_host_lost(sub)
+
+        with self.mutex:
+            # __del__ will close the socket during GC
+            sub = self.subscriptions.pop(name, None)
+            if sub:
+                logger.debug(f"Removing ZMQ subscriber for {name}@{address}")
+
+
+    def get_sock_name(self, fd) -> str:
+        for name, sock in self.subscriptions.items():
+            if fd == sock.sock.fileno():
+                return name
+
+    def get_messages(self):
+        with self.mutex:
+            socks = [s.sock for s in self.subscriptions.values()]
+            for fd, msg in available_messages(socks):
+                yield self.get_sock_name(fd), msg
