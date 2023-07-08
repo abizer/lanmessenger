@@ -8,6 +8,7 @@ import socket
 import threading
 import zmq
 from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
+from time import sleep
 
 from lib.util import IPAddress
 
@@ -39,7 +40,7 @@ class ZMQ:
         self.sock = self.ctx.socket(self.socktype)
 
     def normalized_name(self):
-        return self.name.split('.')[0]
+        return self.name.split(".")[0]
 
     def close(self):
         self.sock.close()
@@ -84,7 +85,9 @@ class ZeroInterface(ABC):
 
 
 class ZeroconfManager:
-    def __init__(self, ziface: ZeroInterface, name: str, addresses: List[str], port: int):
+    def __init__(
+        self, ziface: ZeroInterface, name: str, addresses: List[str], port: int
+    ):
         self.ziface = ziface
         self.service_info = ServiceInfo(
             type_=ZEROCONF_TYPE,
@@ -146,7 +149,9 @@ class ZMQManager(ZeroconfManager):
         # for now, bind to 0.0.0.0
         cxn = f"tcp://0.0.0.0:{port}"
         self.publisher = Publisher(ctx=self.zmq, name=name, cxn=cxn)
-        self.message_poller_thread = threading.Thread(target=self.poll_messages, daemon=True).start()
+        self.message_poller_thread = threading.Thread(
+            target=self.poll_messages, daemon=True
+        ).start()
 
     def close(self):
         logger.debug("shutting down zmq sockets")
@@ -171,20 +176,26 @@ class ZMQManager(ZeroconfManager):
 
     def remove_service(self, *args):
         name, address = super().remove_service(*args)
-        self.ziface.on_host_lost(sub)
 
         with self.mutex:
             # __del__ will close the socket during GC
             sub = self.subscriptions.pop(name, None)
             if sub:
+                self.ziface.on_host_lost(sub)
                 logger.debug(f"Removing ZMQ subscriber for {name}@{address}")
 
     def poll_messages(self):
-        def _sub_from_fd(self, fd) -> str:
+        print("yo")
+
+        def _sub_from_fd(fd) -> str:
             for name, sub in self.subscriptions.items():
                 if fd == sub.sock.fileno():
                     return sub
-        with self.mutex:
-            socks = [s.sock for s in self.subscriptions.values()]
-            for fd, message in available_messages(socks):
-                self.ziface.on_new_message(_sub_from_fd(fd), message)
+
+        while True:
+            # this loop sucks
+            with self.mutex:
+                socks = [s.sock for s in self.subscriptions.values()]
+                for fd, message in available_messages(socks):
+                    self.ziface.on_new_message(_sub_from_fd(fd), message)
+            sleep(0.5)

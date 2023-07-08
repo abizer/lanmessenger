@@ -11,19 +11,18 @@ class Friend:
         # Not sending discovery pings
         OFFLINE = 3
 
-    def __init__(self, username, uuid=uuid.uuid4(), status=Status.ONLINE):
+    def __init__(self, username, status=Status.ONLINE):
         self.username = username
         self.status = status
-        self.uuid = uuid
         self.has_unread = False
 
     def __hash__(self):
-        return hash(self.uuid)
+        return hash(self.username)
 
     def __eq__(self, other):
         if other == None:
             return False
-        return self.username == other.username and self.uuid == other.uuid
+        return self.username == other.username
 
 
 FRIEND_LOOPBACK = Friend("You")
