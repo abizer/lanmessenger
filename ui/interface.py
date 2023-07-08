@@ -323,7 +323,7 @@ class UI:
                 break
             self.local_tx_queue.popleft()
 
-    def run(self):
+    def run(self, mock=False):
         dpg.create_context()
         with dpg.handler_registry():
             dpg.set_viewport_resize_callback(self.viewport_changed_callback)
@@ -342,16 +342,12 @@ class UI:
         dpg.setup_dearpygui()
         dpg.show_viewport()
 
+        if mock:
+            threading.Thread(
+                target=mock_network_events, args=(self.rx_queue, self.tx_queue), daemon=True
+            ).start()
         while dpg.is_dearpygui_running():
             self.process_rx_queue()
             self.process_tx_queue()
             dpg.render_dearpygui_frame()
         dpg.destroy_context()
-
-
-if __name__ == "__main__":
-    ui = UI()
-    threading.Thread(
-        target=mock_network_events, args=(ui.rx_queue, ui.tx_queue), daemon=True
-    ).start()
-    ui.run()
