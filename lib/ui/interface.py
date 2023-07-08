@@ -166,7 +166,7 @@ class UI:
         friend.status = status
         self.on_friends_list_changed()
 
-    # User seleted a new active friend
+    # User selected a new active friend
     def on_selected_friend_changed(self, friend, force=False):
         # logging.debug("on_selected_friend_changed: quick return " % friend)
         friend_changed = False

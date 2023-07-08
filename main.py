@@ -27,8 +27,8 @@ class Middleware(ZeroInterface):
         self.rx_queue = self.ui.tx_queue
 
     def start(self, publisher: Publisher):
-        self._poll_ui_queue = threading.Thread(
-            target=self._poll_ui_queue, args=(publisher,), daemon=True
+        self._ui_queue_processor = threading.Thread(
+            target=self._process_ui_queue, args=(publisher,), daemon=True
         ).start()
         self.ui.run()
 
@@ -67,7 +67,7 @@ class Middleware(ZeroInterface):
             )
         )
 
-    def _poll_ui_queue(self, publisher):
+    def _process_ui_queue(self, publisher):
         while True:
             msg = self.rx_queue.get()
             if msg.type == EventType.MESSAGE_SENT:

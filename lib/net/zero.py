@@ -41,6 +41,7 @@ class ZMQ:
 
     def normalized_name(self):
         return self.name.split(".")[0]
+        return self.name.split(".")[0]
 
     def close(self):
         self.sock.close()
@@ -165,11 +166,14 @@ class ZMQManager(ZeroconfManager):
         return f"tcp://{super().make_address(*args)}"
 
     def add_service(self, *args):
-        # returns the connection string for the pal we just discovered
+        # add_service returns the connection string
+        # for the pal we just discovered
         name, address = super().add_service(*args)
         if address:
             logger.debug(f"Adding ZMQ subscriber for {name}@{address}")
             sub = Subscriber(ctx=self.zmq, name=name, cxn=address)
+            # we have to lock because zeroconf ServiceBrowser calls
+            # this function from a background thread
             with self.mutex:
                 self.subscriptions[name] = sub
             self.ziface.on_host_discovered(sub)
@@ -185,10 +189,8 @@ class ZMQManager(ZeroconfManager):
                 logger.debug(f"Removing ZMQ subscriber for {name}@{address}")
 
     def poll_messages(self):
-        print("yo")
-
         def _sub_from_fd(fd) -> str:
-            for name, sub in self.subscriptions.items():
+            for sub in self.subscriptions.values():
                 if fd == sub.sock.fileno():
                     return sub
 
