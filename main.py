@@ -7,15 +7,11 @@ import logging
 from contextlib import closing
 
 from lib.util import get_lan_ips
-from lib.net import ZMQManager, ZeroInterface, Subscriber
+from lib.net import ZMQManager, ZeroInterface, Subscriber, Publisher
+from ui.comms import EventMessage, EventType
+from ui.friend import Friend
 
 logger = logging.getLogger(__name__)
-
-
-class EventMessage:
-    def __init__(self, type, payload):
-        self.type = type
-        self.payload = payload
 
 
 class Middleware(ZeroInterface):
@@ -24,32 +20,35 @@ class Middleware(ZeroInterface):
         self.tx_queue = self.ui.rx_queue
         self.rx_queue = self.ui.tx_queue
 
-    def start(self, zmq, message):
-        def _network_events_thread():
-            while zmq:
-                try:
-                    for sock, msg in zmq.get_messages():
-                        print(sock, msg)
-                except KeyboardInterrupt:
-                    break
-
-        def _ui_events_thread():
-            while True:
-                zmq.publisher.sock.send_string(message)
-                time.sleep(2)
-
-        threading.Thread(target=_network_events_thread, daemon=True).start()
-        threading.Thread(target=_ui_events_thread, daemon=True).start()
+    def start(self, publisher: Publisher):
+        self.publisher = publisher
+        self._poll_ui_queue = threading.Thread(target=self._poll_ui_queue, daemon=True).start()
         self.ui.run()
 
     def on_host_discovered(self, subscriber: Subscriber):
-        logger.info("on_host_discovered(): %s" % subscriber.name)
+        logger.info("on_host_discovered(): %s" % subscriber.normalized_name())
+        self.tx_queue.put(
+            EventMessage(type=EventType.FRIEND_DISCOVERED, payload=Friend(subscriber.normalized_name()))
+        )
 
     def on_host_lost(self, subscriber: Subscriber):
-        logger.info("on_host_lost(): %s " % subscriber.name)
+        logger.info("on_host_lost(): %s " % subscriber.normalized_name())
 
     def on_new_message(self, subscriber: Subscriber, message: str):
-        pass
+        logger.info("on_new_message(): %s %s" % subscriber.normalized_name(), message)
+        #tx_queue.put(
+        #    EventMessage(type=EventType.MESSAGE_RECEIVED, payload=response)
+        #)
+
+    def _poll_ui_queue(self):
+        while True:
+            print("wtf")
+            msg = self.rx_queue.get()
+            if msg.type == EventType.MESSAGE_SENT:
+                m = msg.payload
+                if not m.is_loopback():
+                    print(m)
+                    pass
 
 
 def main(name: str, port: int, message: str, mock):
@@ -62,7 +61,7 @@ def main(name: str, port: int, message: str, mock):
 
         middleware = Middleware()
         with closing(ZMQManager(middleware, name, addresses, port)) as zmq:
-            middleware.start(zmq, message)
+            middleware.start(zmq.publisher)
 
 
 def parse_args():

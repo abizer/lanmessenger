@@ -38,6 +38,9 @@ class ZMQ:
 
         self.sock = self.ctx.socket(self.socktype)
 
+    def normalized_name(self):
+        return self.name.split('.')[0]
+
     def close(self):
         self.sock.close()
 
@@ -53,6 +56,9 @@ class Publisher(ZMQ):
         super().__init__(ctx, zmq.PUB, name, cxn)
 
         self.sock.bind(self.cxn)
+
+    def send_message(self, message: str):
+        self.sock.send_string(message)
 
 
 class Subscriber(ZMQ):
@@ -112,13 +118,11 @@ class ZeroconfManager:
         if svc.name != self.service_info.name:
             address = self.make_address(svc)
             self.friends[svc.name] = address
-            logger.debug(f"Friend found: {name}@{address}")
 
         return name, address
 
     def remove_service(self, zeroconf, type, name):
         address = self.friends.pop(name)
-        logger.debug(f"Friend lost: {name}@{address}")
         return name, address
 
     def update_service(self, zeroconf, type, name):
@@ -142,6 +146,7 @@ class ZMQManager(ZeroconfManager):
         # for now, bind to 0.0.0.0
         cxn = f"tcp://0.0.0.0:{port}"
         self.publisher = Publisher(ctx=self.zmq, name=name, cxn=cxn)
+        self.message_poller_thread = threading.Thread(target=self.poll_messages, daemon=True).start()
 
     def close(self):
         logger.debug("shutting down zmq sockets")
@@ -149,7 +154,6 @@ class ZMQManager(ZeroconfManager):
         for sub in self.subscriptions.values():
             sub.close()
         self.zmq.term()
-
         super().close()
 
     def make_address(self, *args):
@@ -175,14 +179,12 @@ class ZMQManager(ZeroconfManager):
             if sub:
                 logger.debug(f"Removing ZMQ subscriber for {name}@{address}")
 
-
-    def get_sock_name(self, fd) -> str:
-        for name, sock in self.subscriptions.items():
-            if fd == sock.sock.fileno():
-                return name
-
-    def get_messages(self):
+    def poll_messages(self):
+        def _sub_from_fd(self, fd) -> str:
+            for name, sub in self.subscriptions.items():
+                if fd == sub.sock.fileno():
+                    return sub
         with self.mutex:
             socks = [s.sock for s in self.subscriptions.values()]
-            for fd, msg in available_messages(socks):
-                yield self.get_sock_name(fd), msg
+            for fd, message in available_messages(socks):
+                self.ziface.on_new_message(_sub_from_fd(fd), message)
