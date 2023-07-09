@@ -1,5 +1,6 @@
 from lib.ui.event import EventMessage, EventQueue, EventType
 import lib.ui.event as event
+from lib.util import EventQueue
 from time import sleep
 import random
 import re

@@ -1,4 +1,5 @@
 import argparse
+import queue
 import socket
 import threading
 import time
@@ -7,73 +8,96 @@ import logging
 from contextlib import closing
 
 from lib.net.util import get_lan_ips
-from lib.net.zero import ZMQManager, ZeroInterface, Subscriber, Publisher
+from lib.net.zeroconf import ZeroconfManager
+from lib.net.zmq import (
+    ZMQEvent,
+    ZMQEventType,
+    ZMQManager,
+    Subscriber,
+    Publisher,
+)
 from lib.ui.event import (
     EventMessage,
     EventType,
     FriendIdentifier,
     LOOPBACK_IDENTIFIER,
     Status,
+    StatusChangedPayload,
 )
 import lib.ui.event as event
+from lib.util import EventQueue
 
 logger = logging.getLogger(__name__)
 
 
-class Middleware(ZeroInterface):
-    def __init__(self):
+class UIMiddleware:
+    def __init__(self, publisher: Publisher, events: EventQueue):
         self.ui = ui.UI()
         self.tx_queue = self.ui.rx_queue
         self.rx_queue = self.ui.tx_queue
 
-    def start(self, publisher: Publisher):
-        self._ui_queue_processor = threading.Thread(
-            target=self._process_ui_queue, args=(publisher,), daemon=True
+        self.publisher = publisher
+        self.network_events = events
+
+        self._ui_rx_queue_processor = threading.Thread(
+            target=self._process_ui_rx_queue, daemon=True
         ).start()
+        self._zmq_event_processor = threading.Thread(
+            target=self._process_zmq_event_queue, daemon=True
+        ).start()
+
+    def run(self):
         self.ui.run()
 
-    def on_host_discovered(self, subscriber: Subscriber):
-        logger.info("on_host_discovered(): %s" % subscriber.normalized_name())
-        self.tx_queue.put(
-            EventMessage(
-                type=EventType.FRIEND_STATUS_CHANGED,
-                payload=event.StatusChangedPayload(
-                    id=subscriber.normalized_name(), status=Status.ONLINE
-                ),
-            )
-        )
-
-    def on_host_lost(self, subscriber: Subscriber):
-        logger.info("on_host_lost(): %s " % subscriber.normalized_name())
-        self.tx_queue.put(
-            EventMessage(
-                type=EventType.FRIEND_STATUS_CHANGED,
-                payload=event.StatusChangedPayload(
-                    id=subscriber.normalized_name(), status=Status.OFFLINE
-                ),
-            )
-        )
-
-    def on_new_message(self, subscriber: Subscriber, message: str):
-        logger.info(f"on_new_message(): {subscriber.normalized_name(), message}")
-        self.tx_queue.put(
-            EventMessage(
-                type=EventType.MESSAGE_RECEIVED,
-                payload=event.ChatMessagePayload(
-                    content=message,
-                    author=subscriber.normalized_name(),
-                    to=LOOPBACK_IDENTIFIER,
-                ),
-            )
-        )
-
-    def _process_ui_queue(self, publisher):
+    def _process_ui_rx_queue(self):
         while True:
             msg = self.rx_queue.get()
             if msg.type == EventType.MESSAGE_SENT:
                 m = msg.payload
                 if not m.is_loopback():
-                    publisher.send_message(m.content)
+                    self.publisher.send_message(m.content)
+
+    def _process_zmq_event_queue(self):
+        while True:
+            event = self.network_events.get()
+            if event.type == ZMQEventType.SOCKET_ADDED:
+                name = event.payload
+                self.on_friend_discovered(name)
+            elif event.type == ZMQEventType.SOCKET_REMOVED:
+                name = event.payload
+                self.on_friend_lost(name)
+            elif event.type == ZMQEventType.MESSAGE_RECEIVED:
+                name, message = event.payload
+                self.on_new_message(name, message)
+
+    def on_friend_discovered(self, name: str):
+        logger.info(f"on_friend_discovered(): {name}")
+        self.tx_queue.put(
+            EventMessage(
+                type=EventType.FRIEND_STATUS_CHANGED,
+                payload=event.StatusChangedPayload(id=name, status=Status.ONLINE),
+            )
+        )
+
+    def on_friend_lost(self, name: str):
+        logger.info(f"on_friend_lost(): {name}")
+        EventMessage(
+            type=EventType.FRIEND_STATUS_CHANGED,
+            payload=event.StatusChangedPayload(id=name, status=Status.OFFLINE),
+        )
+
+    def on_new_message(self, name, message: str):
+        logger.info(f"on_new_message(): {name, message}")
+        self.tx_queue.put(
+            EventMessage(
+                type=EventType.MESSAGE_RECEIVED,
+                payload=event.ChatMessagePayload(
+                    content=message,
+                    author=name,
+                    to=LOOPBACK_IDENTIFIER,
+                ),
+            )
+        )
 
 
 def main(name: str, port: int, message: str, mock):
@@ -84,9 +108,10 @@ def main(name: str, port: int, message: str, mock):
         addresses = get_lan_ips() | get_lan_ips(v6=True)
         name = name or f"officepal-{socket.gethostname()}"
 
-        middleware = Middleware()
-        with closing(ZMQManager(middleware, name, addresses, port)) as zmq:
-            middleware.start(zmq.publisher)
+        with closing(ZMQManager(name, port)) as zmq:
+            with closing(ZeroconfManager(name, addresses, port, zmq.discover_events)):
+                ui = UIMiddleware(zmq.publisher, zmq.subscriber_events)
+                ui.run()
 
 
 def parse_args():

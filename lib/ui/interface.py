@@ -1,6 +1,6 @@
+from lib.util import EventQueue
 from lib.ui.event import (
     EventMessage,
-    EventQueue,
     EventType,
     FriendIdentifier,
     LOOPBACK_IDENTIFIER,

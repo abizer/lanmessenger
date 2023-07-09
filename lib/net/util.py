@@ -1,3 +1,4 @@
+import queue
 from typing import Set, Union
 import netifaces
 from ipaddress import IPv4Address, IPv6Address
