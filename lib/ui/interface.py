@@ -3,14 +3,16 @@ from lib.ui.event import (
     EventQueue,
     EventType,
     FriendIdentifier,
-    EventChatMessage,
     LOOPBACK_IDENTIFIER,
+    Status,
 )
+import lib.ui.event as event
 from lib.ui.mock import mock_network_events
 from lib.ui.util import clamp
 
 from collections import deque, OrderedDict, namedtuple
 from copy import deepcopy
+from typing import Optional
 import dearpygui.dearpygui as dpg
 from enum import Enum
 import logging
@@ -25,14 +27,6 @@ CircleColor = namedtuple("CircleColor", "outline fill")
 
 
 class Friend:
-    class Status(Enum):
-        # Sending discovery pings and activity pings within past 15 minutes
-        ONLINE = 1
-        # Sending discovery pings but no recent activity pings
-        AWAY = 2
-        # Not sending discovery pings
-        OFFLINE = 3
-
     class _Message:
         def __init__(self, content: str, outgoing: bool):
             self.content = content
@@ -66,6 +60,7 @@ class CustomWidget:
     COLOR_SELECTABLE_NEW_MESSAGE = (148, 35, 166)
 
     COLOR_STATUS_ONLINE = CircleColor((149, 196, 124), (183, 224, 162))
+    COLOR_STATUS_OFFLINE = CircleColor((201, 60, 72), (230, 83, 83))
     COLOR_STATUS_AWAY = CircleColor((237, 232, 74), (240, 237, 165))
 
     _cached_themes = {}
@@ -89,17 +84,26 @@ class CustomWidget:
 
     @staticmethod
     def selectable_with_status(
-        label, font_size, background_color=COLOR_SELECTABLE_NO_BACKGROUND
+        label, font_size, status, background_color=COLOR_SELECTABLE_NO_BACKGROUND
     ):
+        def _status_to_color(status: Status) -> CircleColor:
+            if status == status.ONLINE:
+                return CustomWidget.COLOR_STATUS_ONLINE
+            elif status == status.AWAY:
+                return CustomWidget.COLOR_STATUS_AWAY
+            else:
+                return CustomWidget.COLOR_STATUS_OFFLINE
+
         padding_y = 2
         with dpg.group(horizontal=True):
             with dpg.drawlist(width=font_size, height=font_size + padding_y):
                 center = font_size // 2 + 1
+                color: CircleColor = _status_to_color(status)
                 dpg.draw_circle(
                     (center, center + padding_y),
                     center // 2,
-                    color=CustomWidget.COLOR_STATUS_ONLINE.outline,
-                    fill=CustomWidget.COLOR_STATUS_ONLINE.fill,
+                    color=color.outline,
+                    fill=color.fill,
                 )
             b = dpg.add_button(label=label, width=-1)
             dpg.bind_item_theme(
@@ -123,7 +127,7 @@ class UI:
 
         self.friends = OrderedDict()
         self.friends[LOOPBACK_IDENTIFIER] = FRIEND_LOOPBACK
-        self.active_friend = None
+        self.active_friend: Optional[Friend] = None
 
         self.rx_queue = EventQueue()
         self.tx_queue = EventQueue()
@@ -151,6 +155,11 @@ class UI:
         self.friends[friend_id] = Friend(friend_id)
         self.on_friends_list_changed()
 
+    def on_status_changed(self, friend: Friend, status: Status):
+        logging.debug(f"EVENT: STATUS_CHANGED: {friend.identifier} {status.name}")
+        friend.status = status
+        self.on_friends_list_changed()
+
     # User seleted a new active friend
     def on_selected_friend_changed(self, friend, force=False):
         # logging.debug("on_selected_friend_changed: quick return " % friend)
@@ -170,6 +179,10 @@ class UI:
                 self.render_message(friend, message)
             self.goto_most_recent_message()
             self.clear_input_box()
+            if self.active_friend.status == event.Status.ONLINE:
+                dpg.configure_item(self.input_box, readonly=False, hint="")
+            else:
+                dpg.configure_item(self.input_box, readonly=True, hint="OFFLINE")
 
     def render_message(self, friend: Friend, message: Friend._Message):
         # unused for now in favor of the much simpler horizontal scrollbar
@@ -219,7 +232,9 @@ class UI:
             selectables = []
             for friend in self.friends.values():
                 item = CustomWidget.selectable_with_status(
-                    label=friend.identifier, font_size=self.current_font_size
+                    label=friend.identifier,
+                    font_size=self.current_font_size,
+                    status=friend.status,
                 )
                 selectables.append(item)
             for item, friend in zip(selectables, self.friends.values()):
@@ -287,7 +302,7 @@ class UI:
                         self.goto_most_recent_message()
                         self.enqueue_event(
                             EventType.MESSAGE_SENT,
-                            EventChatMessage(
+                            event.ChatMessagePayload(
                                 content=msg.content,
                                 author=LOOPBACK_IDENTIFIER,
                                 to=self.active_friend.identifier,
@@ -345,11 +360,18 @@ class UI:
             if msg is None:
                 break
 
-            if msg.type == EventType.FRIEND_DISCOVERED:
-                friend = msg.payload
-                self.on_friend_discovered(friend)
             if msg.type == EventType.FRIEND_STATUS_CHANGED:
-                pass
+                payload: event.StatusChangedPayload = msg.payload
+                if payload.id not in self.friends:
+                    logging.debug(f"EVENT: FRIEND_DISCOVERED: %s" % payload.id)
+                    self.friends[payload.id] = Friend(payload.id)
+                else:
+                    f = self.friends[payload.id]
+                    f.status = payload.status
+                    logging.debug(
+                        f"EVENT: STATUS_CHANGED: {f.identifier} {f.status.name}"
+                    )
+                self.on_friends_list_changed()
             if msg.type == EventType.MESSAGE_RECEIVED:
                 m = self.friends[msg.payload.author].append_message(
                     content=msg.payload.content, outgoing=False

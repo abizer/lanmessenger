@@ -1,4 +1,5 @@
-from lib.ui.event import EventMessage, EventQueue, EventType, EventChatMessage
+from lib.ui.event import EventMessage, EventQueue, EventType
+import lib.ui.event as event
 from time import sleep
 import random
 import re
@@ -89,7 +90,13 @@ def mock_network_events(tx_queue: EventQueue, rx_queue: EventQueue):
     print(generate_mocked_message())
     for name in ("Abizer", "Daniel", "Liam", "Rachel"):
         sleep(random.randrange(1, 3))
-        tx_queue.put(EventMessage(type=EventType.FRIEND_DISCOVERED, payload=name))
+        payload = event.StatusChangedPayload(id=name, status=event.Status.ONLINE)
+        tx_queue.put(
+            EventMessage(type=EventType.FRIEND_STATUS_CHANGED, payload=payload)
+        )
+    sleep(1)
+    payload = event.StatusChangedPayload(id="Rachel", status=event.Status.OFFLINE)
+    tx_queue.put(EventMessage(type=EventType.FRIEND_STATUS_CHANGED, payload=payload))
 
     while True:
         msg = rx_queue.get()
@@ -98,7 +105,7 @@ def mock_network_events(tx_queue: EventQueue, rx_queue: EventQueue):
             print(f"MOCK SENT MESSAGE: TO={m.to} Content: {m.content}")
             if not m.is_loopback():
                 sleep(random.randrange(1, 3))
-                response = EventChatMessage(
+                response = event.ChatMessagePayload(
                     generate_mocked_message(), author=m.to, to=m.author
                 )
                 tx_queue.put(

@@ -10,11 +10,12 @@ from lib.net.util import get_lan_ips
 from lib.net.zero import ZMQManager, ZeroInterface, Subscriber, Publisher
 from lib.ui.event import (
     EventMessage,
-    EventChatMessage,
     EventType,
     FriendIdentifier,
     LOOPBACK_IDENTIFIER,
+    Status,
 )
+import lib.ui.event as event
 
 logger = logging.getLogger(__name__)
 
@@ -35,20 +36,30 @@ class Middleware(ZeroInterface):
         logger.info("on_host_discovered(): %s" % subscriber.normalized_name())
         self.tx_queue.put(
             EventMessage(
-                type=EventType.FRIEND_DISCOVERED,
-                payload=subscriber.normalized_name(),
+                type=EventType.FRIEND_STATUS_CHANGED,
+                payload=event.StatusChangedPayload(
+                    id=subscriber.normalized_name(), status=Status.ONLINE
+                ),
             )
         )
 
     def on_host_lost(self, subscriber: Subscriber):
         logger.info("on_host_lost(): %s " % subscriber.normalized_name())
+        self.tx_queue.put(
+            EventMessage(
+                type=EventType.FRIEND_STATUS_CHANGED,
+                payload=event.StatusChangedPayload(
+                    id=subscriber.normalized_name(), status=Status.OFFLINE
+                ),
+            )
+        )
 
     def on_new_message(self, subscriber: Subscriber, message: str):
         logger.info(f"on_new_message(): {subscriber.normalized_name(), message}")
         self.tx_queue.put(
             EventMessage(
                 type=EventType.MESSAGE_RECEIVED,
-                payload=EventChatMessage(
+                payload=event.ChatMessagePayload(
                     content=message,
                     author=subscriber.normalized_name(),
                     to=LOOPBACK_IDENTIFIER,
