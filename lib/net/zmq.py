@@ -110,11 +110,10 @@ class ZMQManager:
         logger.debug(f"zmq up")
 
     def close(self):
-        logger.debug("shutting down zmq sockets")
         self.publisher.close()
         for sub in self.subscriptions.values():
             sub.close()
-        self.zmq.term()
+        logger.debug("zmq down")
 
     @staticmethod
     def fmt_address(address):

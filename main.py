@@ -81,9 +81,11 @@ class UIMiddleware:
 
     def on_friend_lost(self, name: str):
         logger.info(f"on_friend_lost(): {name}")
-        EventMessage(
-            type=EventType.FRIEND_STATUS_CHANGED,
-            payload=event.StatusChangedPayload(id=name, status=Status.OFFLINE),
+        self.tx_queue.put(
+            EventMessage(
+                type=EventType.FRIEND_STATUS_CHANGED,
+                payload=event.StatusChangedPayload(id=name, status=Status.OFFLINE),
+            )
         )
 
     def on_new_message(self, name, message: str):
