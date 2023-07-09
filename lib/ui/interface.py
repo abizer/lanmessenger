@@ -1,4 +1,4 @@
-from ui.event import (
+from lib.ui.event import (
     EventMessage,
     EventQueue,
     EventType,
@@ -6,8 +6,8 @@ from ui.event import (
     EventChatMessage,
     LOOPBACK_IDENTIFIER,
 )
-from ui.mock import mock_network_events
-from ui.util import clamp
+from lib.ui.mock import mock_network_events
+from lib.ui.util import clamp
 
 from collections import deque, OrderedDict, namedtuple
 from copy import deepcopy

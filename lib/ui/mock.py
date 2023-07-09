@@ -1,4 +1,4 @@
-from ui.event import EventMessage, EventQueue, EventType, EventChatMessage
+from lib.ui.event import EventMessage, EventQueue, EventType, EventChatMessage
 from time import sleep
 import random
 import re

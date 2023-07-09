@@ -2,13 +2,13 @@ import argparse
 import socket
 import threading
 import time
-import ui.interface as ui
+import lib.ui.interface as ui
 import logging
 from contextlib import closing
 
-from lib.util import get_lan_ips
-from lib.net import ZMQManager, ZeroInterface, Subscriber, Publisher
-from ui.event import (
+from lib.net.util import get_lan_ips
+from lib.net.zero import ZMQManager, ZeroInterface, Subscriber, Publisher
+from lib.ui.event import (
     EventMessage,
     EventChatMessage,
     EventType,

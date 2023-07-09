@@ -10,7 +10,7 @@ import zmq
 from zeroconf import ServiceBrowser, ServiceInfo, Zeroconf
 from time import sleep
 
-from lib.util import IPAddress
+from lib.net.util import IPAddress
 
 logger = logging.getLogger(__name__)
 
