@@ -150,6 +150,12 @@ class UI:
         dpg.configure_item(self.input_box, default_value="")
         dpg.focus_item(self.input_box)
 
+    def disable_input_if_offline(self):
+        if self.active_friend.status == event.Status.ONLINE:
+            dpg.configure_item(self.input_box, readonly=False, hint="")
+        else:
+            dpg.configure_item(self.input_box, readonly=True, hint="OFFLINE")
+
     def on_friend_discovered(self, friend_id: FriendIdentifier):
         logging.debug(f"EVENT: FRIEND_DISCOVERED: %s" % friend_id)
         self.friends[friend_id] = Friend(friend_id)
@@ -179,10 +185,7 @@ class UI:
                 self.render_message(friend, message)
             self.goto_most_recent_message()
             self.clear_input_box()
-            if self.active_friend.status == event.Status.ONLINE:
-                dpg.configure_item(self.input_box, readonly=False, hint="")
-            else:
-                dpg.configure_item(self.input_box, readonly=True, hint="OFFLINE")
+            self.disable_input_if_offline()
 
     def render_message(self, friend: Friend, message: Friend._Message):
         # unused for now in favor of the much simpler horizontal scrollbar
@@ -371,6 +374,8 @@ class UI:
                     logging.debug(
                         f"EVENT: STATUS_CHANGED: {f.identifier} {f.status.name}"
                     )
+                    if f == self.active_friend:
+                        self.disable_input_if_offline()
                 self.on_friends_list_changed()
             if msg.type == EventType.MESSAGE_RECEIVED:
                 m = self.friends[msg.payload.author].append_message(
