@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
+import dataclasses
 from enum import Enum
+import json
 from typing import Any, List, Set
 from typing import List, Tuple
 import logging
@@ -80,16 +82,15 @@ class Subscriber(Socket):
         logger.debug(f"Subscriber socket {name}@{cxn} up")
 
 
-def available_messages(sockets: List["Subscriber"]) -> Tuple[str, str]:
-    try:
-        r, _, _ = zmq.select(sockets, [], [], timeout=0.1)
-        return [(sock.fileno(), sock.recv_string()) for sock in r if sock]
-    except zmq.error.ZMQError as e:
-        logger.error(f"error while reading from zmq socket: {e}")
-        return []
-
-
 class ZMQManager:
+    """ZMQ Socket Manager. Holds data and callbacks for the sockets
+    we use to communicate with other instances.
+
+    Consumers interact with this class by:
+        1. calling send_message() to publish messages to subscribers
+        2. polling subscriber_events() for messages from subscriptions
+    """
+
     def __init__(self, name: str, port: int):
         # we populate this for external use
         self.subscriber_events = EventQueue()
@@ -114,6 +115,28 @@ class ZMQManager:
         for sub in self.subscriptions.values():
             sub.close()
         logger.debug("zmq down")
+
+    @staticmethod
+    def _serialize(payload: Any) -> str:
+        if is_dataclass(payload) and not isinstance(payload, type):
+            # make dataclass json serializable
+            payload = dataclasses.asdict(payload)
+        return json.dumps(payload)
+
+    def send_message(self, payload: Any) -> bool:
+        # i dont like that we're passing in EventMessages
+        # but returning ZMQEvents. only one datatype should
+        # pass through this layer.
+        self.publisher.send_message(self._serialize(payload))
+
+    @staticmethod
+    def _deserialize(payload: str) -> Any:
+        # gets called in _poll_for_events
+        return json.loads(payload)
+
+    def get_events(self) -> Any:
+        while True:
+            yield self.subscriber_events.get()
 
     @staticmethod
     def fmt_address(address):
@@ -144,6 +167,17 @@ class ZMQManager:
                 if fd == sub.sock.fileno():
                     return sub
 
+        def available_messages(sockets: List["Subscriber"]) -> Tuple[str, str]:
+            try:
+                r, _, _ = zmq.select(sockets, [], [], timeout=0.1)
+                for sock in r:
+                    if sock:
+                        # deserialize the content here
+                        yield (sock.fileno(), self._deserialize(sock.recv_string()))
+            except zmq.error.ZMQError as e:
+                logger.error(f"error while reading from zmq socket: {e}")
+                return []
+
         while True:
             # first process any new sockets we need to create
             # or remove, so we avoid thread safety issues in select
@@ -164,6 +198,8 @@ class ZMQManager:
             for fd, message in available_messages(socks):
                 name = _sub_from_fd(fd).name
                 self.subscriber_events.put(
+                    # message here will be a dict, assuming the only thing
+                    # coming across the wire from subscribers are EventMessages
                     ZMQEvent(ZMQEventType.MESSAGE_RECEIVED, (name, message))
                 )
                 logger.debug(f"Received message from {name}: {message}")

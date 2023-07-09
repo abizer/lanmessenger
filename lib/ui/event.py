@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -26,11 +27,11 @@ FriendIdentifier = str
 LOOPBACK_IDENTIFIER: FriendIdentifier = "You"
 
 
+@dataclass
 class ChatMessagePayload:
-    def __init__(self, content: str, author: FriendIdentifier, to: FriendIdentifier):
-        self.content = content
-        self.author = author
-        self.to = to
+    content: str
+    author: FriendIdentifier
+    to: FriendIdentifier
 
     def is_loopback(self):
         return self.author == self.to

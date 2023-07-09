@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import json
 import socket
 from pathlib import Path
@@ -6,21 +7,16 @@ from collections import namedtuple
 Dimensions = namedtuple("Dimensions", "width height")
 
 
+@dataclass
 class Settings:
-    DEFAULT_FONT_SIZE = 18
-    DEFAULT_USERNAME = f"officepal-{socket.gethostname()}"
-    DEFAULT_WIDTH = 1368
-    DEFAULT_HEIGHT = 1000
-    APP_DIR = Path.home() / ".lanmessenger"
+    font_size: int = 18
+    username: str = f"officepal-{socket.gethostname()}"
+    width: int = 1368
+    height: int = 1000
+    app_dir: Path = Path.home() / ".lanmessenger"
 
-    def __init__(self):
+    def __post_init__(self):
         self.version = 1
-        self.username = Settings.DEFAULT_USERNAME
-        self.font_size = Settings.DEFAULT_FONT_SIZE
-        self._dimensions = {
-            "width": Settings.DEFAULT_WIDTH,
-            "height": Settings.DEFAULT_HEIGHT,
-        }
 
         try:
             with open(self.filename, "r") as f:
@@ -32,20 +28,18 @@ class Settings:
 
     @property
     def filename(self) -> Path:
-        return Settings.APP_DIR / "settings.json"
+        return Settings.app_dir / f"{self.username}.settings.json"
 
     @property
     def dimensions(self) -> Dimensions:
-        return Dimensions(
-            width=self._dimensions["width"], height=self._dimensions["height"]
-        )
+        return Dimensions(width=self.width, height=self.height)
 
     @dimensions.setter
     def dimensions(self, value: Dimensions):
-        self._dimensions["width"] = value.width
-        self._dimensions["height"] = value.height
+        self.width = value.width
+        self.height = value.height
 
     def serialize(self):
-        Settings.APP_DIR.mkdir(exist_ok=True)
+        Settings.app_dir.mkdir(exist_ok=True)
         with open(self.filename, "w") as f:
-            json.dump(self.__dict__, f)
+            json.dump(self.asdict(), f)

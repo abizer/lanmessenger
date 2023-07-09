@@ -18,6 +18,7 @@ from lib.net.zmq import (
     Publisher,
 )
 from lib.ui.event import (
+    ChatMessagePayload,
     EventMessage,
     EventType,
     FriendIdentifier,
@@ -32,15 +33,16 @@ logger = logging.getLogger(__name__)
 
 
 class UIMiddleware:
-    def __init__(self, publisher: Publisher, events: EventQueue, settings: Settings):
+    def __init__(self, zmq: ZMQManager, settings: Settings):
         # Ownership of settings is now transferred to the UI. Necessarily, all settings
         # related changes are user driven.
         self.ui = ui.UI(settings=settings)
         self.tx_queue = self.ui.rx_queue
         self.rx_queue = self.ui.tx_queue
 
-        self.publisher = publisher
-        self.network_events = events
+        self.zmq = zmq
+        self.publisher = zmq.publisher
+        self.network_events = zmq.subscriber_events
 
         self._ui_rx_queue_processor = threading.Thread(
             target=self._process_ui_rx_queue, daemon=True
@@ -54,15 +56,14 @@ class UIMiddleware:
 
     def _process_ui_rx_queue(self):
         while True:
-            msg = self.rx_queue.get()
+            msg: EventMessage = self.rx_queue.get()
             if msg.type == EventType.MESSAGE_SENT:
-                m = msg.payload
+                m: ChatMessagePayload = msg.payload
                 if not m.is_loopback():
-                    self.publisher.send_message(m.content)
+                    self.zmq.send_message(m)
 
     def _process_zmq_event_queue(self):
-        while True:
-            event = self.network_events.get()
+        for event in self.zmq.get_events():
             if event.type == ZMQEventType.SOCKET_ADDED:
                 name = event.payload
                 self.on_friend_discovered(name)
@@ -70,8 +71,11 @@ class UIMiddleware:
                 name = event.payload
                 self.on_friend_lost(name)
             elif event.type == ZMQEventType.MESSAGE_RECEIVED:
+                # message is a json dict, from when we serialized
+                # the ChatEventMessage we passed in _process_ui_rx_queue
                 name, message = event.payload
-                self.on_new_message(name, message)
+                content = message["content"]
+                self.on_new_message(name, content)
 
     def on_friend_discovered(self, name: str):
         logger.info(f"on_friend_discovered(): {name}")
@@ -106,7 +110,7 @@ class UIMiddleware:
 
 
 def main(name: str, port: int, message: str, mock):
-    settings = Settings()
+    settings = Settings(username=name)
     if mock:
         interface = ui.UI(settings)
         interface.run(mock=True)
@@ -116,7 +120,7 @@ def main(name: str, port: int, message: str, mock):
 
         with closing(ZMQManager(name, port)) as zmq:
             with closing(ZeroconfManager(name, addresses, port, zmq.discover_events)):
-                ui = UIMiddleware(zmq.publisher, zmq.subscriber_events, settings)
+                ui = UIMiddleware(zmq, settings)
                 ui.run()
 
 
