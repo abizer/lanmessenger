@@ -1,4 +1,4 @@
-from lib.ui.event import EventMessage, EventQueue, EventType
+from lib.ui.event import EventMessage, EventType
 import lib.ui.event as event
 from lib.util import EventQueue
 from time import sleep
