@@ -7,6 +7,7 @@ import lib.ui.interface as ui
 import logging
 from contextlib import closing
 
+import lib.ui.settings as settings
 from lib.net.util import get_lan_ips
 from lib.net.zeroconf import ZeroconfManager
 from lib.net.zmq import (
@@ -135,6 +136,8 @@ def parse_args():
 
 
 if __name__ == "__main__":
+    s = settings.Settings()
+    s.serialize()
     logging.basicConfig(level=logging.DEBUG)
     args = parse_args()
     main(name=args.name, port=args.port, message=args.message, mock=args.mock)

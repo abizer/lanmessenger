@@ -278,6 +278,9 @@ class UI:
                 step=1,
                 callback=_change_font_size,
             )
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(hint="Username")
+                dpg.add_button(label="Save")
 
     # Main app content
     def content_area(self):
