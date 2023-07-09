@@ -6,4 +6,11 @@ if [[ -z $VIRTUAL_ENV ]]; then
 fi
 
 BLACK="$VIRTUAL_ENV/bin/black"
-git status | grep -E '\.py[ocd]?$' | awk '{print $2}' | xargs $BLACK
+FILES=$(git status | grep -E '\.py[ocd]?$' | awk '{if (system("[ -f " $2 " ]") == 0) print $2}')
+
+if [[ -n $FILES ]]; then
+  echo $FILES | xargs $BLACK
+else
+  echo "No Python files to format."
+fi
+

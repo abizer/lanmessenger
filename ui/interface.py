@@ -1,12 +1,18 @@
-from collections import deque, OrderedDict, namedtuple
-
-from ui.comms import EventMessage, EventQueue, EventType
-from ui.friend import Friend, Message, FRIEND_LOOPBACK
+from ui.event import (
+    EventMessage,
+    EventQueue,
+    EventType,
+    FriendIdentifier,
+    EventChatMessage,
+    LOOPBACK_IDENTIFIER,
+)
 from ui.mock import mock_network_events
 from ui.util import clamp
 
+from collections import deque, OrderedDict, namedtuple
 from copy import deepcopy
 import dearpygui.dearpygui as dpg
+from enum import Enum
 import logging
 import threading
 
@@ -16,6 +22,42 @@ logging.basicConfig(encoding="utf-8", level=logging.DEBUG)
 
 Dimensions = namedtuple("Dimensions", "width height")
 CircleColor = namedtuple("CircleColor", "outline fill")
+
+
+class Friend:
+    class Status(Enum):
+        # Sending discovery pings and activity pings within past 15 minutes
+        ONLINE = 1
+        # Sending discovery pings but no recent activity pings
+        AWAY = 2
+        # Not sending discovery pings
+        OFFLINE = 3
+
+    class _Message:
+        def __init__(self, content: str, outgoing: bool):
+            self.content = content
+            self.outgoing = outgoing
+
+    def append_message(self, content: str, outgoing: bool) -> _Message:
+        self.messages.append(Friend._Message(content=content, outgoing=outgoing))
+        return self.messages[-1]
+
+    def __init__(self, identifier, status=Status.ONLINE):
+        self.identifier = identifier
+        self.status = status
+        self.has_unread = False
+        self.messages = []
+
+    def __hash__(self):
+        return hash(self.identifier)
+
+    def __eq__(self, other):
+        if other == None:
+            return False
+        return self.identifier == other.identifier
+
+
+FRIEND_LOOPBACK = Friend(LOOPBACK_IDENTIFIER)
 
 
 class CustomWidget:
@@ -80,7 +122,7 @@ class UI:
         self.current_font_size = 18
 
         self.friends = OrderedDict()
-        self.friends[FRIEND_LOOPBACK] = []
+        self.friends[LOOPBACK_IDENTIFIER] = FRIEND_LOOPBACK
         self.active_friend = None
 
         self.rx_queue = EventQueue()
@@ -104,9 +146,9 @@ class UI:
         dpg.configure_item(self.input_box, default_value="")
         dpg.focus_item(self.input_box)
 
-    def on_friend_discovered(self, friend: Friend):
-        logging.debug(f"EVENT: FRIEND_DISCOVERED: %s" % friend.username)
-        self.friends[deepcopy(friend)] = []
+    def on_friend_discovered(self, friend_id: FriendIdentifier):
+        logging.debug(f"EVENT: FRIEND_DISCOVERED: %s" % friend_id)
+        self.friends[friend_id] = Friend(friend_id)
         self.on_friends_list_changed()
 
     # User seleted a new active friend
@@ -118,26 +160,28 @@ class UI:
 
         self.active_friend = friend
         self.active_friend.has_unread = False
-        logging.info(f"on_selected_friend_changed: ({friend.username, friend_changed})")
+        logging.info(
+            f"on_selected_friend_changed: ({friend.identifier, friend_changed})"
+        )
 
         if friend_changed or (force and self.active_friend is not None):
             dpg.delete_item(self.message_box_container, children_only=True)
-            for message in self.friends[friend]:
+            for message in friend.messages:
                 self.render_message(friend, message)
             self.goto_most_recent_message()
             self.clear_input_box()
 
-    def render_message(self, friend, message):
+    def render_message(self, friend: Friend, message: Friend._Message):
         # unused for now in favor of the much simpler horizontal scrollbar
         # wrap = dpg.get_item_state(self.chat_area)['rect_size'][0] - len(author_me) - 80
-        spaces_you = max(0, (len(friend.username) - len(FRIEND_LOOPBACK.username)))
-        spaces_them = max(0, (len(FRIEND_LOOPBACK.username) - len(friend.username)))
+        spaces_you = max(0, (len(friend.identifier) - len(FRIEND_LOOPBACK.identifier)))
+        spaces_them = max(0, (len(FRIEND_LOOPBACK.identifier) - len(friend.identifier)))
 
         author_me = spaces_you * " " + "You:"
-        author_them = spaces_them * " " + friend.username + ":"
+        author_them = spaces_them * " " + friend.identifier + ":"
         assert len(author_them) == len(author_me)
         with dpg.group(horizontal=True, parent=self.message_box_container):
-            if message.author == FRIEND_LOOPBACK:
+            if message.outgoing:
                 dpg.add_text(default_value=author_me, color=(53, 116, 176))
             else:
                 dpg.add_text(default_value=author_them, color=(227, 79, 68))
@@ -173,12 +217,12 @@ class UI:
                 self.on_selected_friend_changed(new_active_friend)
 
             selectables = []
-            for friend in self.friends.keys():
+            for friend in self.friends.values():
                 item = CustomWidget.selectable_with_status(
-                    label=friend.username, font_size=self.current_font_size
+                    label=friend.identifier, font_size=self.current_font_size
                 )
                 selectables.append(item)
-            for item, friend in zip(selectables, self.friends.keys()):
+            for item, friend in zip(selectables, self.friends.values()):
                 dpg.configure_item(
                     item, callback=_friend_selection, user_data=(friend, selectables)
                 )
@@ -238,13 +282,17 @@ class UI:
                 if len(input) > 0:
                     self.clear_input_box()
                     if self.active_friend is not None:
-                        msg = Message(
-                            input, author=FRIEND_LOOPBACK, to=self.active_friend
-                        )
-                        self.friends[self.active_friend].append(msg)
+                        msg = self.active_friend.append_message(input, True)
                         self.render_message(self.active_friend, msg)
                         self.goto_most_recent_message()
-                        self.enqueue_event(EventType.MESSAGE_SENT, msg)
+                        self.enqueue_event(
+                            EventType.MESSAGE_SENT,
+                            EventChatMessage(
+                                content=msg.content,
+                                author=LOOPBACK_IDENTIFIER,
+                                to=self.active_friend.identifier,
+                            ),
+                        )
 
             dpg.configure_item(self.input_box, callback=_on_submit)
             dpg.add_button(label="Submit", callback=_on_submit)
@@ -303,15 +351,16 @@ class UI:
             if msg.type == EventType.FRIEND_STATUS_CHANGED:
                 pass
             if msg.type == EventType.MESSAGE_RECEIVED:
-                self.friends[msg.payload.author].append(msg.payload)
-                if msg.payload.author == self.active_friend:
-                    self.render_message(msg.payload.author, msg.payload)
+                m = self.friends[msg.payload.author].append_message(
+                    content=msg.payload.content, outgoing=False
+                )
+                author = self.friends[msg.payload.author]
+                if author == self.active_friend:
+                    self.render_message(author, m)
                     self.goto_most_recent_message()
                 else:
-                    for friend in self.friends.keys():
-                        if friend == msg.payload.author:
-                            friend.has_unread = True
-                            self.on_friends_list_changed()
+                    author.has_unread = True
+                    self.on_friends_list_changed()
 
     def process_tx_queue(self):
         def _peekleft():

@@ -8,8 +8,13 @@ from contextlib import closing
 
 from lib.util import get_lan_ips
 from lib.net import ZMQManager, ZeroInterface, Subscriber, Publisher
-from ui.comms import EventMessage, EventType
-from ui.friend import Friend, Message, FRIEND_LOOPBACK
+from ui.event import (
+    EventMessage,
+    EventChatMessage,
+    EventType,
+    FriendIdentifier,
+    LOOPBACK_IDENTIFIER,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +36,7 @@ class Middleware(ZeroInterface):
         self.tx_queue.put(
             EventMessage(
                 type=EventType.FRIEND_DISCOVERED,
-                payload=Friend(subscriber.normalized_name()),
+                payload=subscriber.normalized_name(),
             )
         )
 
@@ -40,11 +45,15 @@ class Middleware(ZeroInterface):
 
     def on_new_message(self, subscriber: Subscriber, message: str):
         logger.info(f"on_new_message(): {subscriber.normalized_name(), message}")
-        response = Message(
-            message, author=Friend(subscriber.normalized_name()), to=FRIEND_LOOPBACK
-        )
         self.tx_queue.put(
-            EventMessage(type=EventType.MESSAGE_RECEIVED, payload=response)
+            EventMessage(
+                type=EventType.MESSAGE_RECEIVED,
+                payload=EventChatMessage(
+                    content=message,
+                    author=subscriber.normalized_name(),
+                    to=LOOPBACK_IDENTIFIER,
+                ),
+            )
         )
 
     def _poll_ui_queue(self, publisher):

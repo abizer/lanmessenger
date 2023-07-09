@@ -1,5 +1,4 @@
 from enum import Enum
-from ui.friend import Friend
 import queue
 
 
@@ -49,3 +48,17 @@ class EventQueue:
 
     def size(self):
         return self.fifo.qsize()
+
+
+FriendIdentifier = str
+LOOPBACK_IDENTIFIER: FriendIdentifier = "You"
+
+
+class EventChatMessage:
+    def __init__(self, content: str, author: FriendIdentifier, to: FriendIdentifier):
+        self.content = content
+        self.author = author
+        self.to = to
+
+    def is_loopback(self):
+        return self.author == self.to
