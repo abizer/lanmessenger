@@ -6,6 +6,7 @@ from lib.ui.event import (
     LOOPBACK_IDENTIFIER,
     Status,
 )
+from lib.ui.settings import Settings, Dimensions
 import lib.ui.event as event
 from lib.ui.mock import mock_network_events
 from lib.ui.util import clamp
@@ -22,7 +23,6 @@ import threading
 logging.basicConfig(encoding="utf-8", level=logging.DEBUG)
 
 
-Dimensions = namedtuple("Dimensions", "width height")
 CircleColor = namedtuple("CircleColor", "outline fill")
 
 
@@ -114,16 +114,15 @@ class CustomWidget:
 
 
 class UI:
-    def __init__(self):
+    def __init__(self, settings=Settings()):
         # Starting dimensions. Subject to change on viewport rearragement
-        self.dim = Dimensions(1368, 1000)
+        self.settings = settings
 
         # Minimum size we will allow the viewport
         self.min_dim = Dimensions(800, 750)
 
         self.min_font_size = 16
         self.max_font_size = 20
-        self.current_font_size = 18
 
         self.friends = OrderedDict()
         self.friends[LOOPBACK_IDENTIFIER] = FRIEND_LOOPBACK
@@ -139,7 +138,7 @@ class UI:
         with dpg.font_registry():
             for size in range(self.min_font_size, self.max_font_size + 1):
                 self.fonts[size] = dpg.add_font(DEFAULT_FONT_OSX, size)
-        dpg.bind_font(self.fonts[self.current_font_size])
+        dpg.bind_font(self.fonts[self.settings.font_size])
 
     # Scrolls to the end of the active chat window
     def goto_most_recent_message(self):
@@ -236,7 +235,7 @@ class UI:
             for friend in self.friends.values():
                 item = CustomWidget.selectable_with_status(
                     label=friend.identifier,
-                    font_size=self.current_font_size,
+                    font_size=self.settings.font_size,
                     status=friend.status,
                 )
                 selectables.append(item)
@@ -267,20 +266,44 @@ class UI:
         def _change_font_size(sender, app_data, user_data):
             new_font_size = clamp(app_data, self.min_font_size, self.max_font_size)
             dpg.configure_item(sender, default_value=new_font_size)
-            self.current_font_size = new_font_size
-            dpg.bind_item_font(self.content_area, self.fonts[self.current_font_size])
+            self.settings.font_size = new_font_size
+            dpg.bind_item_font(self.content_area, self.fonts[self.settings.font_size])
             self.on_friends_list_changed()
 
         with dpg.menu(parent=self.menu_bar, label="Settings"):
             dpg.add_input_int(
-                label="font_size",
-                default_value=self.current_font_size,
+                label="Font Size",
+                default_value=self.settings.font_size,
                 step=1,
                 callback=_change_font_size,
             )
             with dpg.group(horizontal=True):
-                dpg.add_input_text(hint="Username")
-                dpg.add_button(label="Save")
+
+                def _on_default_clicked(sender, app_data, user_data):
+                    input_box = user_data
+                    dpg.configure_item(
+                        input_box, default_value=Settings.DEFAULT_USERNAME
+                    )
+
+                def _on_named_changed(sender, app_data, user_data):
+                    input_box = user_data
+                    new_username = dpg.get_value(input_box).strip()
+                    if len(new_username) > 0:
+                        self.settings.username = new_username
+                        self.enqueue_event(
+                            EventType.USERNAME_CHANGED,
+                            event.UsernameChangedPayload(username=new_username),
+                        )
+
+                input_box = dpg.add_input_text(
+                    default_value=self.settings.username, hint="Username"
+                )
+                dpg.add_button(
+                    label="Default", callback=_on_default_clicked, user_data=input_box
+                )
+                dpg.add_button(
+                    label="Save", callback=_on_named_changed, user_data=input_box
+                )
 
     # Main app content
     def content_area(self):
@@ -298,7 +321,7 @@ class UI:
                 label="##Input Text", default_value="", tag="chat_input", on_enter=True
             )
 
-            def _on_submit(sender, data):
+            def _on_message_submit(sender, data):
                 input = dpg.get_value(self.input_box).strip()
                 if len(input) > 0:
                     self.clear_input_box()
@@ -315,8 +338,8 @@ class UI:
                             ),
                         )
 
-            dpg.configure_item(self.input_box, callback=_on_submit)
-            dpg.add_button(label="Submit", callback=_on_submit)
+            dpg.configure_item(self.input_box, callback=_on_message_submit)
+            dpg.add_button(label="Submit", callback=_on_message_submit)
         self.goto_most_recent_message()
 
         # Friends list
@@ -329,8 +352,8 @@ class UI:
     def create_layout(self):
         self.main_window = dpg.add_window(
             label="main_window",
-            width=self.dim.width,
-            height=self.dim.height,
+            width=self.settings.dimensions.width,
+            height=self.settings.dimensions.height,
             no_close=True,
             menubar=False,
             no_collapse=True,
@@ -343,7 +366,9 @@ class UI:
 
     def reflow_layout(self):
         dpg.configure_item(
-            self.main_window, width=self.dim.width, height=self.dim.height
+            self.main_window,
+            width=self.settings.dimensions.width,
+            height=self.settings.dimensions.height,
         )
         dpg.configure_item(self.friends_collapsable_header, default_open=True)
         if self.active_friend is not None:
@@ -353,8 +378,10 @@ class UI:
         dpg.focus_item(self.input_box)
 
     def viewport_changed_callback(self, sender, data):
-        self.dim = self.dim._replace(width=data[0], height=data[1])
-        logging.info(f"Viewport changed {self.dim.width, self.dim.height}")
+        self.settings.dimensions = Dimensions(width=data[0], height=data[1])
+        logging.info(
+            f"Viewport changed {self.settings.dimensions.width, self.settings.dimensions.height}"
+        )
         self.reflow_layout()
 
     def enqueue_event(self, type, payload):
@@ -413,8 +440,8 @@ class UI:
         self.create_layout()
         dpg.create_viewport(
             title="LAN Messenger",
-            width=self.dim.width,
-            height=self.dim.height,
+            width=self.settings.dimensions.width,
+            height=self.settings.dimensions.height,
             min_width=self.min_dim.width,
             min_height=self.min_dim.height,
         )
@@ -432,3 +459,4 @@ class UI:
             self.process_tx_queue()
             dpg.render_dearpygui_frame()
         dpg.destroy_context()
+        self.settings.serialize()

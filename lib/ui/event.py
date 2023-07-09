@@ -12,6 +12,8 @@ class EventType(Enum):
     ###########################################
     # Send message over the network
     MESSAGE_SENT = (3,)
+    # Username changed
+    USERNAME_CHANGED = (4,)
 
 
 class EventMessage:
@@ -47,3 +49,8 @@ class StatusChangedPayload:
     def __init__(self, id: FriendIdentifier, status: Status):
         self.id = id
         self.status = status
+
+
+class UsernameChangedPayload:
+    def __init__(self, username: FriendIdentifier):
+        self.username = username

@@ -7,7 +7,7 @@ import lib.ui.interface as ui
 import logging
 from contextlib import closing
 
-import lib.ui.settings as settings
+from lib.ui.settings import Settings
 from lib.net.util import get_lan_ips
 from lib.net.zeroconf import ZeroconfManager
 from lib.net.zmq import (
@@ -32,8 +32,10 @@ logger = logging.getLogger(__name__)
 
 
 class UIMiddleware:
-    def __init__(self, publisher: Publisher, events: EventQueue):
-        self.ui = ui.UI()
+    def __init__(self, publisher: Publisher, events: EventQueue, settings: Settings):
+        # Ownership of settings is now transferred to the UI. Necessarily, all settings
+        # related changes are user driven.
+        self.ui = ui.UI(settings=settings)
         self.tx_queue = self.ui.rx_queue
         self.rx_queue = self.ui.tx_queue
 
@@ -104,16 +106,17 @@ class UIMiddleware:
 
 
 def main(name: str, port: int, message: str, mock):
+    settings = Settings()
     if mock:
-        interface = ui.UI()
+        interface = ui.UI(settings)
         interface.run(mock=True)
     else:
         addresses = get_lan_ips() | get_lan_ips(v6=True)
-        name = name or f"officepal-{socket.gethostname()}"
+        name = settings.username
 
         with closing(ZMQManager(name, port)) as zmq:
             with closing(ZeroconfManager(name, addresses, port, zmq.discover_events)):
-                ui = UIMiddleware(zmq.publisher, zmq.subscriber_events)
+                ui = UIMiddleware(zmq.publisher, zmq.subscriber_events, settings)
                 ui.run()
 
 
@@ -136,8 +139,6 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    s = settings.Settings()
-    s.serialize()
     logging.basicConfig(level=logging.DEBUG)
     args = parse_args()
     main(name=args.name, port=args.port, message=args.message, mock=args.mock)
