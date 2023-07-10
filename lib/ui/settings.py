@@ -32,7 +32,7 @@ class Settings:
 
     @property
     def filename(self) -> Path:
-        return APP_DIR / f"{self.username}.settings.json"
+        return APP_DIR / "settings.json"
 
     @property
     def dimensions(self) -> Dimensions:
@@ -47,3 +47,10 @@ class Settings:
         APP_DIR.mkdir(exist_ok=True)
         with open(self.filename, "w") as f:
             json.dump(asdict(self), f)
+
+
+@dataclass
+class DevSettings(Settings):
+    @property
+    def filename(self) -> Path:
+        return APP_DIR / f"{self.username}.settings.json"

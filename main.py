@@ -8,7 +8,7 @@ import lib.ui.interface as ui
 import logging
 from contextlib import closing
 
-from lib.ui.settings import Settings
+from lib.ui.settings import DevSettings, Settings
 from lib.net.util import get_lan_ips
 from lib.net.zeroconf import ZeroconfManager
 from lib.net.zmq import (
@@ -135,8 +135,13 @@ class UIMiddleware:
         )
 
 
-def main(name: str, port: int, message: str, mock):
-    settings = Settings(username=name)
+def main(dev_name: str, port: int, mock: bool):
+    settings = None
+    if len(dev_name) > 0:
+        settings = DevSettings(username=dev_name)
+    else:
+        settings = Settings()
+
     if mock:
         interface = ui.UI(settings)
         interface.run(mock=True)
@@ -162,13 +167,8 @@ def parse_args():
     hostname = socket.gethostname()
     parser = argparse.ArgumentParser(description="officepal lanmessenger")
 
-    parser.add_argument(
-        "--name", type=str, default=f"officepal-{hostname}", help="Service name"
-    )
+    parser.add_argument("--dev-name", type=str, default=f"", help="Service name")
     parser.add_argument("--port", type=int, default=31337, help="Listen port")
-    parser.add_argument(
-        "--message", type=str, default="Hello from officepal", help="Publish message"
-    )
     parser.add_argument(
         "--mock", action="store_true", default=False, help="Run the mock UI"
     )
@@ -179,4 +179,4 @@ def parse_args():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     args = parse_args()
-    main(name=args.name, port=args.port, message=args.message, mock=args.mock)
+    main(dev_name=args.dev_name, port=args.port, mock=args.mock)
