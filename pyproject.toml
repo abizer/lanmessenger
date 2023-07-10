@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "an application for finding and messaging other applications on a LAN"
 authors = ["Abizer Lokhandwala <abizer@abizer.me>"]
 readme = "README.md"
+license = "Apache-2.0"
 
 [tool.poetry.dependencies]
 python = "^3.9"
