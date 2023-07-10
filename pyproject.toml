@@ -2,7 +2,7 @@
 name = "lanmessenger"
 version = "0.1.0"
 description = "an application for finding and messaging other applications on a LAN"
-authors = ["Abizer Lokhandwala <abizer@abizer.me>"]
+authors = ["Abizer Lokhandwala <abizer@abizer.me>", "Kevin Kuehler <kevin.kuehler@gmail.com>"]
 readme = "README.md"
 license = "Apache-2.0"
 
