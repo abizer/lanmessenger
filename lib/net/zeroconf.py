@@ -87,7 +87,7 @@ class ZeroconfManager:
         if address:
             logger.debug(f"lost friend {name}")
         if self.queue:
-            self.queue.put((name, None))
+            self.queue.put((name, None, None))
 
     def update_service(self, *args):
         pass
