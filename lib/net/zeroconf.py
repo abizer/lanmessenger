@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, List, Set
-from typing import List, Tuple
+from typing import List, Tuple, Dict, List
 import logging
 import queue
 import socket
@@ -30,13 +29,19 @@ class ZeroInterface(ABC):
 
 class ZeroconfManager:
     def __init__(
-        self, name: str, addresses: List[str], port: int, event_queue: queue.Queue
+        self,
+        name: str,
+        metadata: Dict,
+        addresses: List[str],
+        port: int,
+        event_queue: queue.Queue,
     ):
         self.service_info = ServiceInfo(
             type_=ZEROCONF_TYPE,
             name=f"{name}.{ZEROCONF_TYPE}",
             port=port,
             addresses=[ip.packed for ip in addresses],
+            properties=metadata,
         )
         self.friends = {}
 
@@ -66,13 +71,16 @@ class ZeroconfManager:
         address = ""
         if svc.name != self.service_info.name:
             logger.debug(f"discovered friend {name} {address}")
+            metadata = {
+                key.decode(): value.decode() for key, value in svc.properties.items()
+            }
             address = self.make_address(svc)
             self.friends[svc.name] = address
 
             # put information into the queue so downstream
             # libraries can consume it in a thread-safe way
             if self.queue:
-                self.queue.put((name, address))
+                self.queue.put((name, address, metadata))
 
     def remove_service(self, zeroconf, type, name):
         address = self.friends.pop(name)

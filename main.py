@@ -23,6 +23,7 @@ from lib.ui.event import (
     EventType,
     LOOPBACK_IDENTIFIER,
     Status,
+    FriendIdentifier,
 )
 import lib.ui.event as event
 from lib.util import EventQueue
@@ -71,23 +72,14 @@ class UIMiddleware:
                 self.on_new_message(name, payload["content"])
         elif type == EventType.USERNAME_CHANGED:
             self.on_friend_username_changed(id=name, new_username=payload["username"])
-        elif type == EventType.USERNAME_REQUEST:
-            self.zmq.send_message(
-                EventMessage(
-                    type=EventType.USERNAME_CHANGED,
-                    payload=event.UsernameChangedPayload(
-                        id=self.publisher.normalized_name, username=self.username
-                    ),
-                )
-            )
         else:
             print(f"Unknown message typeeee {type}")
 
     def _process_zmq_event_queue(self):
         for event in self.zmq.get_events():
             if event.type == ZMQEventType.SOCKET_ADDED:
-                name = event.payload
-                self.on_friend_discovered(name)
+                name, metadata = event.payload
+                self.on_friend_discovered(name, metadata["username"])
             elif event.type == ZMQEventType.SOCKET_REMOVED:
                 name = event.payload
                 self.on_friend_lost(name)
@@ -99,19 +91,15 @@ class UIMiddleware:
                     name=name, type=payload["type"], payload=payload["payload"]
                 )
 
-    def on_friend_discovered(self, name: str):
-        logger.info(f"on_friend_discovered(): {name}")
+    def on_friend_discovered(self, id: FriendIdentifier, username: str):
+        logger.info(f"on_friend_discovered(): {id}:{username}")
         self.tx_queue.put(
             EventMessage(
                 type=EventType.FRIEND_STATUS_CHANGED,
-                payload=event.StatusChangedPayload(id=name, status=Status.ONLINE),
+                payload=event.StatusChangedPayload(id=id, status=Status.ONLINE),
             )
         )
-        # stupid fucking pubsub race condition
-        time.sleep(3)
-        self.zmq.send_message(
-            EventMessage(type=EventType.USERNAME_REQUEST, payload=None)
-        )
+        self.on_friend_username_changed(id=id, new_username=username)
 
     def on_friend_lost(self, name: str):
         logger.info(f"on_friend_lost(): {name}")
@@ -154,11 +142,17 @@ def main(name: str, port: int, message: str, mock):
         interface.run(mock=True)
     else:
         addresses = get_lan_ips() | get_lan_ips(v6=True)
-        name = settings.username
 
+        username = settings.username
         with closing(ZMQManager(settings.uuid, port)) as zmq:
             with closing(
-                ZeroconfManager(settings.uuid, addresses, port, zmq.discover_events)
+                ZeroconfManager(
+                    settings.uuid,
+                    {"username": username},
+                    addresses,
+                    port,
+                    zmq.discover_events,
+                )
             ):
                 ui = UIMiddleware(zmq, settings)
                 ui.run()

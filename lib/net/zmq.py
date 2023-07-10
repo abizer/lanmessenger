@@ -3,8 +3,7 @@ from dataclasses import dataclass, is_dataclass
 import dataclasses
 from enum import Enum
 import json
-from typing import Any, List, Set
-from typing import List, Tuple
+from typing import Any, List, Tuple, Dict
 import logging
 import queue
 import socket
@@ -182,11 +181,11 @@ class ZMQManager:
             # first process any new sockets we need to create
             # or remove, so we avoid thread safety issues in select
             while self.discover_events.size() > 0:
-                name, address = self.discover_events.get()
+                name, address, metadata = self.discover_events.get()
                 if address:
                     sub = self.on_add_subscription(name, address)
                     self.subscriber_events.put(
-                        ZMQEvent(ZMQEventType.SOCKET_ADDED, sub.name)
+                        ZMQEvent(ZMQEventType.SOCKET_ADDED, (sub.name, metadata))
                     )
                 else:
                     sub = self.on_drop_subscription(name)
