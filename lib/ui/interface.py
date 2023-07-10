@@ -22,8 +22,7 @@ from enum import Enum
 import logging
 import threading
 
-# TODO(kkuehler): default to INFO and make configurable via cli argument
-logging.basicConfig(encoding="utf-8", level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 CircleColor = namedtuple("CircleColor", "outline fill")

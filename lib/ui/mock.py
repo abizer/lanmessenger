@@ -5,6 +5,7 @@ from time import sleep
 import random
 import re
 import pathlib
+from typing import List
 
 DIR = pathlib.Path(__file__).parent
 
@@ -18,7 +19,7 @@ digits = "([0-9])"
 multiple_dots = r"\.{2,}"
 
 
-def split_into_sentences(text: str) -> list[str]:
+def split_into_sentences(text: str) -> List[str]:
     """
     Split the text into sentences.
 
