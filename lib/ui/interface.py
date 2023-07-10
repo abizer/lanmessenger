@@ -8,6 +8,7 @@ from lib.ui.event import (
 from lib.ui.settings import Settings, Dimensions
 import lib.ui.settings as settings
 import lib.ui.event as event
+from lib.ui.font import load_font
 from lib.ui.mock import mock_network_events
 from lib.ui.util import clamp
 
@@ -139,11 +140,11 @@ class UI:
         return self.friends[self.settings.uuid]
 
     def register_fonts(self):
-        DEFAULT_FONT_OSX = "/System/Library/Fonts/SFNSMono.ttf"
+        font_file_ttf = load_font()
         self.fonts = {}
         with dpg.font_registry():
             for size in range(self.min_font_size, self.max_font_size + 1):
-                self.fonts[size] = dpg.add_font(DEFAULT_FONT_OSX, size)
+                self.fonts[size] = dpg.add_font(font_file_ttf, size)
         dpg.bind_font(self.fonts[self.settings.font_size])
 
     # Scrolls to the end of the active chat window
