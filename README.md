@@ -12,3 +12,11 @@ on the network. We use python-zeroconf to avoid needing an external Bonjour clie
 The UI layer uses dearpygui to implement a simple UI.
 
 The application uses queues to pass messages around between the different layers and avoid thread safety issues.
+
+## Usage
+
+```
+$ poetry install
+$ poetry shell
+$ python3 main.py
+```
