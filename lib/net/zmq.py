@@ -90,7 +90,7 @@ class ZMQManager:
         2. polling subscriber_events() for messages from subscriptions
     """
 
-    def __init__(self, name: str, port: int):
+    def __init__(self, name: str, port: int, address: str = "0.0.0.0"):
         # we populate this for external use
         self.subscriber_events = EventQueue()
 
@@ -100,8 +100,11 @@ class ZMQManager:
         self.subscriptions = {}
         self.zmq = zmq.Context.instance()
 
-        # for now, bind to 0.0.0.0
-        cxn = f"tcp://0.0.0.0:{port}"
+        self.address = address
+        self.port = port
+
+        # default, bind to 0.0.0.0
+        cxn = f"tcp://{address}:{port}"
         self.publisher = Publisher(name=name, cxn=cxn)
         self.message_poller_thread = threading.Thread(
             target=self._poll_for_events, daemon=True
@@ -126,6 +129,7 @@ class ZMQManager:
         # i dont like that we're passing in EventMessages
         # but returning ZMQEvents. only one datatype should
         # pass through this layer.
+        logger.debug(f"sending message {payload.payload.content}")
         self.publisher.send_message(self._serialize(payload))
 
     @staticmethod

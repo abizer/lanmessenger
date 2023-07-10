@@ -1,4 +1,5 @@
 import argparse
+import ipaddress
 import queue
 import socket
 import threading
@@ -135,7 +136,7 @@ class UIMiddleware:
         )
 
 
-def main(dev_name: str, port: int, mock: bool):
+def main(dev_name: str, address: str, port: int, mock: bool):
     settings = None
     if len(dev_name) > 0:
         settings = DevSettings(username=dev_name)
@@ -146,10 +147,13 @@ def main(dev_name: str, port: int, mock: bool):
         interface = ui.UI(settings)
         interface.run(mock=True)
     else:
-        addresses = get_lan_ips() | get_lan_ips(v6=True)
+        if address == "0.0.0.0":
+            addresses = get_lan_ips() | get_lan_ips(v6=True)
+        else:
+            addresses = [ipaddress.ip_address(address)]
 
         username = settings.username
-        with closing(ZMQManager(settings.uuid, port)) as zmq:
+        with closing(ZMQManager(settings.uuid, port, address)) as zmq:
             with closing(
                 ZeroconfManager(
                     settings.uuid,
@@ -168,7 +172,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="officepal lanmessenger")
 
     parser.add_argument("--dev-name", type=str, default=f"", help="Service name")
-    parser.add_argument("--port", type=int, default=31337, help="Listen port")
+    parser.add_argument("--address", type=str, default="0.0.0.0", help="Address to listen on")
+    parser.add_argument("--port", type=int, default=31337, help="Port to listen on")
     parser.add_argument(
         "--mock", action="store_true", default=False, help="Run the mock UI"
     )
@@ -179,4 +184,4 @@ def parse_args():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     args = parse_args()
-    main(dev_name=args.dev_name, port=args.port, mock=args.mock)
+    main(dev_name=args.dev_name, address=args.address, port=args.port, mock=args.mock)
