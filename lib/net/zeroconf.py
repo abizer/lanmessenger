@@ -65,7 +65,7 @@ class ZeroconfManager:
         svc = zeroconf.get_service_info(type, name)
         address = ""
         if svc.name != self.service_info.name:
-            logger.debug(f"discovered friend {name}")
+            logger.debug(f"discovered friend {name} {address}")
             address = self.make_address(svc)
             self.friends[svc.name] = address
 

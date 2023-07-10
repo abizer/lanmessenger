@@ -60,10 +60,12 @@ class UIMiddleware:
                 m: event.ChatMessagePayload = msg.payload
                 if not m.is_loopback():
                     self.zmq.send_message(msg)
-            else:
-                logging.info(f"Unknown message type: {msg.type}")
+            elif msg.type == EventType.USERNAME_CHANGED:
+                self.username = msg.payload.username
+                self.zmq.send_message(msg)
 
     def _process_ui_event(self, name, type, payload):
+        print(type == EventType.USERNAME_CHANGED)
         if type == EventType.MESSAGE_SENT:
             if payload["to"] == self.publisher.normalized_name:
                 self.on_new_message(name, payload["content"])
@@ -79,7 +81,7 @@ class UIMiddleware:
                 )
             )
         else:
-            print(f"Unknown message type {event['type']}")
+            print(f"Unknown message typeeee {type}")
 
     def _process_zmq_event_queue(self):
         for event in self.zmq.get_events():
@@ -105,6 +107,8 @@ class UIMiddleware:
                 payload=event.StatusChangedPayload(id=name, status=Status.ONLINE),
             )
         )
+        # stupid fucking pubsub race condition
+        time.sleep(3)
         self.zmq.send_message(
             EventMessage(type=EventType.USERNAME_REQUEST, payload=None)
         )
