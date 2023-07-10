@@ -1,4 +1,0 @@
-dearpygui
-pyzmq
-zeroconf
-netifaces
