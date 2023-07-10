@@ -13,7 +13,7 @@ DEFAULT_USERNAME: str = f"officepal-{socket.gethostname()}"
 
 @dataclass
 class Settings:
-    uuid: UUID = field(default_factory=uuid4)
+    uuid: str = field(default_factory=lambda: str(uuid4()))
     font_size: int = 18
     username: str = DEFAULT_USERNAME
     width: int = 1368
@@ -26,8 +26,6 @@ class Settings:
             with open(self.filename, "r") as f:
                 settings_dict = json.load(f)
                 for key, value in settings_dict.items():
-                    if key == "uuid":
-                        value = UUID(value)
                     setattr(self, key, value)
         except FileNotFoundError:
             pass
@@ -48,6 +46,4 @@ class Settings:
     def serialize(self):
         APP_DIR.mkdir(exist_ok=True)
         with open(self.filename, "w") as f:
-            dict = asdict(self)
-            dict["uuid"] = dict["uuid"].hex
-            json.dump(dict, f)
+            json.dump(asdict(self), f)

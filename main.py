@@ -19,13 +19,10 @@ from lib.net.zmq import (
     Publisher,
 )
 from lib.ui.event import (
-    ChatMessagePayload,
     EventMessage,
     EventType,
-    FriendIdentifier,
     LOOPBACK_IDENTIFIER,
     Status,
-    StatusChangedPayload,
 )
 import lib.ui.event as event
 from lib.util import EventQueue
@@ -38,6 +35,7 @@ class UIMiddleware:
         # Ownership of settings is now transferred to the UI. Necessarily, all settings
         # related changes are user driven.
         self.ui = ui.UI(settings=settings)
+        self.username = settings.username
         self.tx_queue = self.ui.rx_queue
         self.rx_queue = self.ui.tx_queue
 
@@ -59,17 +57,29 @@ class UIMiddleware:
         while True:
             msg: EventMessage = self.rx_queue.get()
             if msg.type == EventType.MESSAGE_SENT:
-                m: ChatMessagePayload = msg.payload
+                m: event.ChatMessagePayload = msg.payload
                 if not m.is_loopback():
                     self.zmq.send_message(msg)
             else:
                 logging.info(f"Unknown message type: {msg.type}")
 
-    def _process_ui_event(self, name, event):
-        if event["type"] == EventType.MESSAGE_SENT:
-            payload = event["payload"]
-            if payload['to'] == self.publisher.normalized_name:
+    def _process_ui_event(self, name, type, payload):
+        if type == EventType.MESSAGE_SENT:
+            if payload["to"] == self.publisher.normalized_name:
                 self.on_new_message(name, payload["content"])
+        elif type == EventType.USERNAME_CHANGED:
+            self.on_friend_username_changed(id=name, new_username=payload["username"])
+        elif type == EventType.USERNAME_REQUEST:
+            self.zmq.send_message(
+                EventMessage(
+                    type=EventType.USERNAME_CHANGED,
+                    payload=event.UsernameChangedPayload(
+                        id=self.publisher.normalized_name, username=self.username
+                    ),
+                )
+            )
+        else:
+            print(f"Unknown message type {event['type']}")
 
     def _process_zmq_event_queue(self):
         for event in self.zmq.get_events():
@@ -83,7 +93,9 @@ class UIMiddleware:
                 # message is a json dict, from when we serialized
                 # the ChatEventMessage we passed in _process_ui_rx_queue
                 name, payload = event.payload
-                self._process_ui_event(name=name, event=payload)
+                self._process_ui_event(
+                    name=name, type=payload["type"], payload=payload["payload"]
+                )
 
     def on_friend_discovered(self, name: str):
         logger.info(f"on_friend_discovered(): {name}")
@@ -92,6 +104,9 @@ class UIMiddleware:
                 type=EventType.FRIEND_STATUS_CHANGED,
                 payload=event.StatusChangedPayload(id=name, status=Status.ONLINE),
             )
+        )
+        self.zmq.send_message(
+            EventMessage(type=EventType.USERNAME_REQUEST, payload=None)
         )
 
     def on_friend_lost(self, name: str):
@@ -116,6 +131,17 @@ class UIMiddleware:
             )
         )
 
+    def on_friend_username_changed(self, id, new_username):
+        self.tx_queue.put(
+            EventMessage(
+                type=EventType.USERNAME_CHANGED,
+                payload=event.UsernameChangedPayload(
+                    id=id,
+                    username=new_username,
+                ),
+            )
+        )
+
 
 def main(name: str, port: int, message: str, mock):
     settings = Settings(username=name)
@@ -126,8 +152,10 @@ def main(name: str, port: int, message: str, mock):
         addresses = get_lan_ips() | get_lan_ips(v6=True)
         name = settings.username
 
-        with closing(ZMQManager(name, port)) as zmq:
-            with closing(ZeroconfManager(name, addresses, port, zmq.discover_events)):
+        with closing(ZMQManager(settings.uuid, port)) as zmq:
+            with closing(
+                ZeroconfManager(settings.uuid, addresses, port, zmq.discover_events)
+            ):
                 ui = UIMiddleware(zmq, settings)
                 ui.run()
 

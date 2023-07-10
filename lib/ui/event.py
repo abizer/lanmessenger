@@ -16,6 +16,8 @@ class EventType(IntEnum):
     MESSAGE_SENT = 3
     # Username changed
     USERNAME_CHANGED = 4
+    # Username request
+    USERNAME_REQUEST = 5
 
 
 FriendIdentifier = str
@@ -49,7 +51,8 @@ class StatusChangedPayload:
 
 @dataclass
 class UsernameChangedPayload:
-    username: FriendIdentifier
+    id: FriendIdentifier
+    username: str
 
 
 UiEventPayload = Union[ChatMessagePayload, StatusChangedPayload, UsernameChangedPayload]
