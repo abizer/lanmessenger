@@ -3,6 +3,7 @@ import queue
 import socket
 import threading
 import time
+import json
 import lib.ui.interface as ui
 import logging
 from contextlib import closing
@@ -60,7 +61,15 @@ class UIMiddleware:
             if msg.type == EventType.MESSAGE_SENT:
                 m: ChatMessagePayload = msg.payload
                 if not m.is_loopback():
-                    self.zmq.send_message(m)
+                    self.zmq.send_message(msg)
+            else:
+                logging.info(f"Unknown message type: {msg.type}")
+
+    def _process_ui_event(self, name, event):
+        if event["type"] == EventType.MESSAGE_SENT:
+            payload = event["payload"]
+            if payload['to'] == self.publisher.normalized_name:
+                self.on_new_message(name, payload["content"])
 
     def _process_zmq_event_queue(self):
         for event in self.zmq.get_events():
@@ -73,9 +82,8 @@ class UIMiddleware:
             elif event.type == ZMQEventType.MESSAGE_RECEIVED:
                 # message is a json dict, from when we serialized
                 # the ChatEventMessage we passed in _process_ui_rx_queue
-                name, message = event.payload
-                content = message["content"]
-                self.on_new_message(name, content)
+                name, payload = event.payload
+                self._process_ui_event(name=name, event=payload)
 
     def on_friend_discovered(self, name: str):
         logger.info(f"on_friend_discovered(): {name}")

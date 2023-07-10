@@ -7,6 +7,7 @@ from lib.ui.event import (
     Status,
 )
 from lib.ui.settings import Settings, Dimensions
+import lib.ui.settings as settings
 import lib.ui.event as event
 from lib.ui.mock import mock_network_events
 from lib.ui.util import clamp
@@ -14,6 +15,8 @@ from lib.ui.util import clamp
 from collections import deque, OrderedDict, namedtuple
 from copy import deepcopy
 from typing import Optional
+
+
 import dearpygui.dearpygui as dpg
 from enum import Enum
 import logging
@@ -282,7 +285,7 @@ class UI:
                 def _on_default_clicked(sender, app_data, user_data):
                     input_box = user_data
                     dpg.configure_item(
-                        input_box, default_value=Settings.DEFAULT_USERNAME
+                        input_box, default_value=settings.DEFAULT_USERNAME
                     )
 
                 def _on_named_changed(sender, app_data, user_data):

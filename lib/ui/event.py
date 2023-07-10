@@ -1,26 +1,21 @@
 from dataclasses import dataclass
-from enum import Enum
+from enum import IntEnum
+from typing import Union
 
 
-class EventType(Enum):
+class EventType(IntEnum):
     ###########################################
     # New friend discovered in the LAN
     # Friend is either online, away, offline
-    FRIEND_STATUS_CHANGED = (1,)
+    FRIEND_STATUS_CHANGED = 1
     # Message came in over the network
-    MESSAGE_RECEIVED = (2,)
+    MESSAGE_RECEIVED = 2
 
     ###########################################
     # Send message over the network
-    MESSAGE_SENT = (3,)
+    MESSAGE_SENT = 3
     # Username changed
-    USERNAME_CHANGED = (4,)
-
-
-class EventMessage:
-    def __init__(self, type, payload):
-        self.type = type
-        self.payload = payload
+    USERNAME_CHANGED = 4
 
 
 FriendIdentifier = str
@@ -37,7 +32,7 @@ class ChatMessagePayload:
         return self.author == self.to
 
 
-class Status(Enum):
+class Status(IntEnum):
     # Sending discovery pings and activity pings within past 15 minutes
     ONLINE = 1
     # Sending discovery pings but no recent activity pings
@@ -46,12 +41,21 @@ class Status(Enum):
     OFFLINE = 3
 
 
+@dataclass
 class StatusChangedPayload:
-    def __init__(self, id: FriendIdentifier, status: Status):
-        self.id = id
-        self.status = status
+    id: FriendIdentifier
+    status: Status
 
 
+@dataclass
 class UsernameChangedPayload:
-    def __init__(self, username: FriendIdentifier):
-        self.username = username
+    username: FriendIdentifier
+
+
+UiEventPayload = Union[ChatMessagePayload, StatusChangedPayload, UsernameChangedPayload]
+
+
+@dataclass
+class EventMessage:
+    type: EventType
+    payload: UiEventPayload
