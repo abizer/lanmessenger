@@ -12,7 +12,7 @@ zeroconf = "^0.71.0"
 pyzmq = "^25.1.0"
 netifaces = "^0.11.0"
 dearpygui = "^1.9.1"
-pyobjc = "^9.2"
+pyobjc-framework-cocoa = {version = "^9.2", platform = "darwin"}
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.4.1"
