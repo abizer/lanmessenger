@@ -164,15 +164,12 @@ def main(dev_name: str, port: int, mock: bool):
 
 
 def parse_args():
-    hostname = socket.gethostname()
     parser = argparse.ArgumentParser(description="officepal lanmessenger")
-
     parser.add_argument("--dev-name", type=str, default=f"", help="Service name")
     parser.add_argument("--port", type=int, default=31337, help="Listen port")
     parser.add_argument(
         "--mock", action="store_true", default=False, help="Run the mock UI"
     )
-
     return parser.parse_args()
 
 

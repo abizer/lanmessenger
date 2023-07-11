@@ -1,4 +1,6 @@
 import queue
+from enum import Enum
+import sys
 
 
 class EventQueue:
@@ -27,3 +29,18 @@ class EventQueue:
 
     def size(self):
         return self.fifo.qsize()
+
+
+class OperatingSystem(Enum):
+    MacOS = 1
+    Linux = 2
+    Windows = 3
+
+
+def get_platfrom() -> OperatingSystem:
+    if sys.platform.startswith("win"):
+        return OperatingSystem.Windows
+    elif sys.platform.startswith("darwin"):
+        return OperatingSystem.MacOS
+    else:
+        return OperatingSystem.Linux

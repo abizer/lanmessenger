@@ -18,6 +18,7 @@ class Settings:
     username: str = DEFAULT_USERNAME
     width: int = 1368
     height: int = 1000
+    bring_to_front_on_new_message: bool = True
 
     def __post_init__(self):
         self.version = 1

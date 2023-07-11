@@ -8,6 +8,7 @@ from lib.ui.event import (
 from lib.ui.settings import Settings, Dimensions
 import lib.ui.settings as settings
 import lib.ui.event as event
+import lib.ui.popup as popup
 from lib.ui.font import load_font
 from lib.ui.mock import mock_network_events
 from lib.ui.util import clamp
@@ -303,6 +304,15 @@ class UI:
                     label="Save", callback=_on_named_changed, user_data=input_box
                 )
 
+            def _on_bring_to_front_checkbox_clicked(sender, app_data):
+                self.settings.bring_to_front_on_new_message = app_data
+
+            dpg.add_checkbox(
+                label="Bring to front on new message",
+                default_value=self.settings.bring_to_front_on_new_message,
+                callback=_on_bring_to_front_checkbox_clicked,
+            )
+
     # Main app content
     def content_area(self):
         self.content_area = dpg.add_group(parent=self.main_window, horizontal=True)
@@ -418,6 +428,8 @@ class UI:
                 else:
                     author.has_unread = True
                     self.on_friends_list_changed()
+                if self.settings.bring_to_front_on_new_message:
+                    popup.bring_to_front()
             elif msg.type == EventType.USERNAME_CHANGED:
                 self.friends[msg.payload.id].username = msg.payload.username
                 self.on_friends_list_changed()
@@ -450,6 +462,7 @@ class UI:
         )
         dpg.setup_dearpygui()
         dpg.show_viewport()
+        popup.register_app()
 
         if mock:
             threading.Thread(
