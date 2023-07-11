@@ -1,6 +1,10 @@
 
 import base64
+from collections import namedtuple
+from dataclasses import dataclass, field
+import dataclasses
 import datetime
+from enum import Enum
 import pickle
 import queue
 import threading
@@ -10,6 +14,74 @@ import zmq
 import logging
 
 logger = logging.getLogger(__name__)
+
+class StateEvent(Enum):
+    NOOP: False
+    VERIFY: True
+
+@dataclass
+class StateChange:
+    ts: int = field(default_factory=int(datetime.datetime.timestamp()))
+    seqno: int
+    event: StateEvent
+    state: Any
+
+
+class InMemSharedState:
+    def __init__(self, node_id: int):
+        self.node_id = node_id
+        self.state = {}
+        self.next_seqno = 0
+        self.state_lock = threading.Lock()
+
+        self.recover_state()
+
+    def recover_state(self):
+        pass
+
+    def iter_state_change(self, change: StateChange):
+        change = change or StateChange(seqno=self.next_seqno, event=StateEvent.NOOP)
+        while change:
+            change = yield self.apply_state_change(change)
+
+    def _noop_change(self, change) -> StateChange:
+        return dataclasses.replace(change, event=StateEvent.NOOP)
+
+    def _empty_verify(self, change) -> StateChange:
+        return dataclasses.replace(change, state=None)
+
+    def apply_state_change(self, change: StateChange) -> StateChange:
+        if change.event == StateEvent.NOOP:
+            return change
+
+        # change.event == StateEvent.VERIFY
+        if not change.state:
+            # we got an empty verify. if we don't know about it,
+            # we'll learn about it eventually, so return noop
+            return self._noop_change(change)
+
+        existing_state = self.state.get(change.seqno, None)
+        if existing_state:
+            # we got a full verify for a seqno we know about.
+            # smaller ts or longest state wins, return the full verify if we won
+            if existing_state == min(existing_state, change, key=lambda x: (x.ts, -len(x.state))):
+                return existing_state
+            else:
+                # the change won. return an empty verify
+                self.state[change.seqno] = change
+                return self._empty_verify(change)
+        elif change.seqno >= self.next_seqno:
+            # we got a full verify for a seqno we don't know about
+            # if the seqno is valid, accept it and return an empty verify
+            self.next_seqno = change.seqno + 1
+            self.state[change.seqno] = change
+            return self._empty_verify(change)
+        else:
+            # we got a full verify for an invalid seqno we don't know about.
+            # any client that sends us one of these is out of sync. return noop
+            return self._noop_change(change)
+
+
 
 class ZMQTransport(object):
     def __init__(self, address: str, port: str):
@@ -77,11 +149,6 @@ class Node(ZMQTransport):
     def __init__(self, node_id: int = 0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.node_id = node_id
-
-        self.state_fn = f"{node_id}.history.txt"
-        self.shared_state = self.load_state(self.state_fn)
-        self.seqno: int = len(self.shared_state)
-        self.state_lock = threading.Lock()
 
 
     def load_state(self, state_fn: str):

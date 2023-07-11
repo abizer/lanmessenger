@@ -63,7 +63,7 @@ class ZeroconfManager:
         logger.debug("zeroconf down")
 
     def make_address(self, svc: ServiceInfo) -> str:
-        dst_address = socket.inet_ntoa(svc.addresses[0])
+        dst_address = "10.20.30.55" # socket.inet_ntoa(svc.addresses[0])
         return f"{dst_address}:{svc.port}"
 
     def add_service(self, zeroconf, type, name) -> str:
